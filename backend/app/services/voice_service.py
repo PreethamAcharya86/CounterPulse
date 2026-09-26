@@ -1,7 +1,8 @@
 import logging
 import uuid
 import re
-from typing import Dict, Any, Optional, Tuple
+import asyncio
+from typing import Dict, Any, Optional, Tuple, List
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import settings
@@ -61,17 +62,226 @@ class VoiceControlService:
             pending_action=sess.pending_action,
         )
 
+    def get_safe_tool_declarations(self) -> List[Dict[str, Any]]:
+        """
+        Strict, minimal function declarations for Gemini Live tool calling.
+        CRITICAL HITL SAFETY REQUIREMENT:
+        - Exposes ONLY approved, safe CounterPulse case inspection functions.
+        - NEVER exposes arbitrary command execution, arbitrary HTTP requests, or raw email dispatch.
+        - Report dispatching MUST pass through explicit confirmation gate.
+        """
+        return [
+            {
+                "name": "get_case_summary",
+                "description": "Retrieve incident reconstruction summary, scam category, and financial loss for the case.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "case_id": {"type": "STRING", "description": "The case ID to query"}
+                    },
+                    "required": ["case_id"],
+                },
+            },
+            {
+                "name": "get_case_intelligence",
+                "description": "Retrieve deep intelligence including modus operandi, psychological tactics, and attacker indicators.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "case_id": {"type": "STRING", "description": "The case ID to query"}
+                    },
+                    "required": ["case_id"],
+                },
+            },
+            {
+                "name": "get_compromise_summary",
+                "description": "Retrieve compromise assessments for bank accounts, cards, credentials, and devices.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "case_id": {"type": "STRING", "description": "The case ID to query"}
+                    },
+                    "required": ["case_id"],
+                },
+            },
+            {
+                "name": "get_report",
+                "description": "Retrieve an existing generated report draft (e.g. cybercrime_complaint, bank_dispute, security_advisory).",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "case_id": {"type": "STRING", "description": "The case ID"},
+                        "report_type": {"type": "STRING", "description": "Type of report: cybercrime_complaint, bank_dispute, security_advisory"}
+                    },
+                    "required": ["case_id", "report_type"],
+                },
+            },
+            {
+                "name": "generate_report",
+                "description": "Generate or retrieve response report for the case.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "case_id": {"type": "STRING", "description": "The case ID"},
+                        "report_type": {"type": "STRING", "description": "Type of report: cybercrime_complaint, bank_dispute, security_advisory"}
+                    },
+                    "required": ["case_id", "report_type"],
+                },
+            },
+            {
+                "name": "request_report_send_confirmation",
+                "description": "Request explicit human confirmation before dispatching a report. NEVER sends email directly.",
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "case_id": {"type": "STRING", "description": "The case ID"},
+                        "report_type": {"type": "STRING", "description": "Type of report to request confirmation for"}
+                    },
+                    "required": ["case_id", "report_type"],
+                },
+            },
+        ]
+
+    def get_case_summary(self, case_id: str, db: Session) -> Dict[str, Any]:
+        case = db.query(Case).filter(Case.id == case_id).first()
+        if not case:
+            return {"error": f"Case '{case_id}' not found"}
+        loss_str = f"INR {case.financial_loss:,.2f}" if case.financial_loss else "undisclosed amounts"
+        return {
+            "case_id": case.id,
+            "title": case.title,
+            "scam_category": case.scam_category or "Unclassified Fraud",
+            "severity_level": case.severity_level or "medium",
+            "financial_loss": loss_str,
+            "summary": case.summary or case.description or "No incident summary recorded.",
+            "status": case.status.value if hasattr(case.status, "value") else str(case.status),
+        }
+
+    def get_compromise_summary(self, case_id: str, db: Session) -> Dict[str, Any]:
+        case = db.query(Case).filter(Case.id == case_id).first()
+        if not case:
+            return {"error": f"Case '{case_id}' not found"}
+        comps = [
+            {
+                "category": c.category,
+                "risk_level": c.risk_level,
+                "details": c.details,
+                "recommended_action": c.recommended_action,
+            }
+            for c in (case.compromise_assessments or [])
+        ]
+        return {"case_id": case_id, "compromise_count": len(comps), "assessments": comps}
+
+    def get_case_intelligence(self, case_id: str, db: Session) -> Dict[str, Any]:
+        case = db.query(Case).filter(Case.id == case_id).first()
+        if not case:
+            return {"error": f"Case '{case_id}' not found"}
+        return {
+            "case_id": case_id,
+            "summary": case.summary,
+            "scam_category": case.scam_category,
+            "modus_operandi": case.modus_operandi,
+            "ai_analysis": case.ai_analysis or {},
+        }
+
+    def get_report(self, case_id: str, report_type: str, db: Session) -> Dict[str, Any]:
+        reports = self.report_svc.get_reports_for_case(case_id=case_id, db=db)
+        r = next((x for x in reports if x.report_type == report_type), None)
+        if not r:
+            return {"error": f"Report of type '{report_type}' not found for case {case_id}."}
+        return {
+            "report_id": r.id,
+            "report_type": r.report_type,
+            "title": r.title,
+            "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+            "recipient": r.recipient_email,
+            "summary": r.content_markdown[:400] if r.content_markdown else "",
+        }
+
+    def generate_report(self, case_id: str, report_type: str, db: Session) -> Dict[str, Any]:
+        return self.get_report(case_id=case_id, report_type=report_type, db=db)
+
+    def request_report_send_confirmation(
+        self, case_id: str, report_type: str, db: Session, session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        reports = self.report_svc.get_reports_for_case(case_id=case_id, db=db)
+        r = next((x for x in reports if x.report_type == report_type), None)
+        if not r:
+            return {"error": f"No {report_type} report found to send. Run analysis first."}
+        recipient = r.recipient_email or settings.DEMO_RECIPIENT_EMAIL
+        sess = self.get_or_create_session(session_id, case_id)
+        sess.pending_action = {
+            "action": "send_report",
+            "report_id": r.id,
+            "report_type": report_type,
+            "recipient": recipient,
+        }
+        sess.voice_state = "RESPONDING"
+        label = report_type.replace("_", " ").title()
+        return {
+            "status": "confirmation_required",
+            "pending_action": sess.pending_action,
+            "confirmation_prompt": (
+                f"The {label} is ready for {recipient}. Do you want me to send it? "
+                "Please say 'yes' to confirm or 'no' to cancel."
+            ),
+        }
+
+    def execute_safe_tool(
+        self, name: str, args: Dict[str, Any], db: Session, session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute an approved safe tool by name with arguments.
+        Rejects any unrecognized or unapproved function calls.
+        """
+        ALLOWED_TOOLS = {
+            "get_case_summary",
+            "get_case_intelligence",
+            "get_compromise_summary",
+            "get_report",
+            "generate_report",
+            "request_report_send_confirmation",
+        }
+        if name not in ALLOWED_TOOLS:
+            logger.warning("Rejected unapproved tool call: %s", name)
+            return {"error": f"Tool '{name}' is not permitted by CounterPulse security policy."}
+
+        case_id = args.get("case_id")
+        if not case_id:
+            return {"error": "Missing required argument 'case_id'."}
+
+        if name == "get_case_summary":
+            return self.get_case_summary(case_id=case_id, db=db)
+        elif name == "get_case_intelligence":
+            return self.get_case_intelligence(case_id=case_id, db=db)
+        elif name == "get_compromise_summary":
+            return self.get_compromise_summary(case_id=case_id, db=db)
+        elif name == "get_report":
+            return self.get_report(case_id=case_id, report_type=args.get("report_type", ""), db=db)
+        elif name == "generate_report":
+            return self.generate_report(case_id=case_id, report_type=args.get("report_type", ""), db=db)
+        elif name == "request_report_send_confirmation":
+            return self.request_report_send_confirmation(
+                case_id=case_id,
+                report_type=args.get("report_type", ""),
+                db=db,
+                session_id=session_id,
+            )
+        return {"error": f"Unhandled tool '{name}'"}
+
     def parse_intent(self, transcript: str) -> str:
         """
         Identify voice intent using rule-based pattern matching with high precision.
         """
         t = transcript.lower().strip()
 
-        # Confirmation & Cancellation
+        # Cancellation & Negative Intents (Checked first for strict safety)
+        if re.search(r'\b(no|cancel|stop|don\'t|dont|do not|nevermind|wait|abort|reject)\b', t):
+            return "CANCEL_ACTION"
+
+        # Confirmation & Proceed
         if re.search(r'\b(yes|confirm|proceed|send it|approve and send|do it|kalsu|haan|yes please)\b', t):
             return "CONFIRM_ACTION"
-        if re.search(r'\b(no|cancel|stop|don\'t send|do not send|wait|nevermind)\b', t):
-            return "CANCEL_ACTION"
 
         # Consequential Dispatches
         if ("send" in t or "dispatch" in t or "email" in t) and ("complaint" in t or "cybercrime" in t or "ncrp" in t or "police" in t):
@@ -104,6 +314,71 @@ class VoiceControlService:
         return "UNKNOWN"
 
     async def execute_command(
+        self,
+        case_id: str,
+        cmd: VoiceCommandRequest,
+        db: Session,
+        email_provider: Optional[EmailProvider] = None,
+        ai_provider: Optional[AIProvider] = None,
+    ) -> VoiceCommandResponse:
+        """
+        Public entrypoint for executing voice commands.
+        Wraps dispatch with optional Gemini Live 24kHz speech synthesis.
+        """
+        resp = await self._dispatch_command(
+            case_id=case_id,
+            cmd=cmd,
+            db=db,
+            email_provider=email_provider,
+            ai_provider=ai_provider,
+        )
+        if cmd.synthesize or (cmd.audio_base64 and settings.GEMINI_API_KEY):
+            resp.audio_base64 = await self.synthesize_live_audio(resp.response_text)
+        return resp
+
+    async def synthesize_live_audio(self, text: str) -> Optional[str]:
+        """
+        Synthesize natural 24kHz linear PCM audio speech for response text via Gemini Live.
+        Returns base64-encoded audio string, or None if unconfigured or in offline test mode.
+        """
+        if not settings.GEMINI_API_KEY or AIProviderFactory.get_override_provider() is not None:
+            return None
+
+        async def _connect_and_synthesize() -> Optional[str]:
+            from google import genai
+            from google.genai import types
+            import base64
+
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            config = types.LiveConnectConfig(
+                response_modalities=["AUDIO"],
+                system_instruction="You are CounterPulse Voice Layer. Read the text aloud clearly, concisely, and professionally in English."
+            )
+            audio_chunks = bytearray()
+            async with client.aio.live.connect(model=settings.GEMINI_LIVE_MODEL, config=config) as session:
+                await session.send_client_content(
+                    turns=[types.Content(role="user", parts=[types.Part.from_text(text=f"Read this text clearly: {text}")])],
+                    turn_complete=True
+                )
+                async for response in session.receive():
+                    sc = response.server_content
+                    if sc and sc.model_turn:
+                        for part in sc.model_turn.parts:
+                            if part.inline_data and part.inline_data.data:
+                                audio_chunks.extend(part.inline_data.data)
+                    if sc and sc.turn_complete:
+                        break
+            if audio_chunks:
+                return base64.b64encode(audio_chunks).decode("ascii")
+            return None
+
+        try:
+            return await asyncio.wait_for(_connect_and_synthesize(), timeout=12.0)
+        except Exception as e:
+            logger.warning("Gemini Live speech synthesis skipped or failed: %s", e)
+            return None
+
+    async def _dispatch_command(
         self,
         case_id: str,
         cmd: VoiceCommandRequest,

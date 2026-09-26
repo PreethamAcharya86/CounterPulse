@@ -35,7 +35,9 @@ export const VoiceControlView: React.FC<Props> = ({
   onNavigateToReports,
   onNavigateToEvidence,
 }) => {
-  const [voiceState, setVoiceState] = useState<"IDLE" | "LISTENING" | "PROCESSING" | "RESPONDING" | "ERROR">("IDLE");
+  const [voiceState, setVoiceState] = useState<
+    "IDLE" | "LISTENING" | "PROCESSING" | "RESPONDING" | "DISCONNECTED" | "ERROR"
+  >("IDLE");
   const [transcript, setTranscript] = useState<string>("");
   const [inputText, setInputText] = useState<string>("");
   const [turns, setTurns] = useState<MessageTurn[]>([
@@ -51,13 +53,60 @@ export const VoiceControlView: React.FC<Props> = ({
 
   const recognitionRef = useRef<any>(null);
   const turnsEndRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   // Auto-scroll
   useEffect(() => {
     turnsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
 
-  // Text to speech helper
+  // Web Audio API 24kHz PCM linear player for Gemini Live audio responses
+  const playAudioChunk = useCallback(
+    (base64Audio: string) => {
+      if (!isAudioEnabled || typeof window === "undefined") return;
+      try {
+        const binary = window.atob(base64Audio);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        const int16 = new Int16Array(bytes.buffer);
+        const float32 = new Float32Array(int16.length);
+        for (let i = 0; i < int16.length; i++) {
+          float32[i] = int16[i] / 32768.0;
+        }
+
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextClass) return;
+
+        if (!audioContextRef.current || audioContextRef.current.state === "closed") {
+          audioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+        }
+        const ctx = audioContextRef.current;
+        if (ctx.state === "suspended") {
+          ctx.resume();
+        }
+
+        const audioBuffer = ctx.createBuffer(1, float32.length, 24000);
+        audioBuffer.copyToChannel(float32, 0);
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        source.onended = () => {
+          setVoiceState("IDLE");
+        };
+        setVoiceState("RESPONDING");
+        source.start();
+      } catch (e) {
+        console.warn("PCM audio playback error:", e);
+      }
+    },
+    [isAudioEnabled]
+  );
+
+  // Text to speech fallback helper
   const speakText = useCallback(
     (text: string) => {
       if (!isAudioEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -74,6 +123,85 @@ export const VoiceControlView: React.FC<Props> = ({
     },
     [isAudioEnabled]
   );
+
+  // WebSocket Live bidirectional stream connection
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/api/v1/cases/${caseId}/voice/live`;
+    let ws: WebSocket | null = null;
+    let reconnectTimer: any = null;
+
+    const connectWs = () => {
+      try {
+        ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          setVoiceState((prev) => (prev === "DISCONNECTED" ? "IDLE" : prev));
+          setErrorStatus(null);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "state_change") {
+              if (data.voice_state) setVoiceState(data.voice_state);
+            } else if (data.type === "audio_chunk" && data.data) {
+              playAudioChunk(data.data);
+            } else if (data.type === "voice_response") {
+              setVoiceState(data.voice_state || "IDLE");
+              setPendingAction(data.pending_action);
+              const assistantTurn: MessageTurn = {
+                sender: "assistant",
+                text: data.response_text,
+                intent: data.intent,
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                requiresConfirmation: data.requires_confirmation,
+                actionExecuted: data.action_executed,
+              };
+              setTurns((prev) => [...prev, assistantTurn]);
+
+              if (data.audio_base64) {
+                playAudioChunk(data.audio_base64);
+              } else {
+                speakText(data.response_text);
+              }
+            } else if (data.type === "error") {
+              setErrorStatus(data.message || "Voice streaming error");
+              setVoiceState("ERROR");
+            }
+          } catch (e) {
+            console.warn("WS message parse error:", e);
+          }
+        };
+
+        ws.onclose = () => {
+          setVoiceState("DISCONNECTED");
+          reconnectTimer = setTimeout(connectWs, 4000);
+        };
+
+        ws.onerror = (e) => {
+          console.warn("WebSocket error:", e);
+          setVoiceState("DISCONNECTED");
+        };
+      } catch (err) {
+        console.warn("WebSocket connection init error:", err);
+      }
+    };
+
+    connectWs();
+
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
+    };
+  }, [caseId, playAudioChunk, speakText]);
 
   // Initialize Web Speech Recognition if supported
   useEffect(() => {
@@ -116,7 +244,7 @@ export const VoiceControlView: React.FC<Props> = ({
     }
   }, [voiceState]);
 
-  // Handle command dispatch to backend
+  // Handle command dispatch to backend via WebSocket or REST fallback
   const handleSendCommand = async (commandText: string) => {
     if (!commandText.trim()) return;
 
@@ -133,6 +261,19 @@ export const VoiceControlView: React.FC<Props> = ({
     setInputText("");
     setTranscript("");
 
+    // Try WebSocket if connected
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "voice_command",
+          transcript: commandText.trim(),
+          synthesize: true,
+        })
+      );
+      return;
+    }
+
+    // Fallback to REST API
     try {
       const res = await fetch(`/api/v1/cases/${caseId}/voice/command`, {
         method: "POST",
@@ -140,12 +281,13 @@ export const VoiceControlView: React.FC<Props> = ({
         body: JSON.stringify({
           transcript: commandText.trim(),
           session_id: `vsession-${caseId}`,
+          synthesize: true,
         }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setVoiceState("RESPONDING");
+        setVoiceState(data.voice_state || "IDLE");
         setPendingAction(data.pending_action);
 
         const assistantTurn: MessageTurn = {
@@ -158,7 +300,11 @@ export const VoiceControlView: React.FC<Props> = ({
         };
         setTurns((prev) => [...prev, assistantTurn]);
 
-        speakText(data.response_text);
+        if (data.audio_base64) {
+          playAudioChunk(data.audio_base64);
+        } else {
+          speakText(data.response_text);
+        }
       } else {
         const err = await res.json().catch(() => ({}));
         setErrorStatus(err.detail || "Voice command execution failed.");
@@ -221,11 +367,18 @@ export const VoiceControlView: React.FC<Props> = ({
             RESPONDING
           </span>
         );
+      case "DISCONNECTED":
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40">
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            DISCONNECTED
+          </span>
+        );
       case "ERROR":
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
             <AlertTriangle className="w-3.5 h-3.5" />
-            ERROR / DISCONNECTED
+            ERROR
           </span>
         );
       case "IDLE":

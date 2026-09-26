@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.app.api.deps import get_db, get_email_provider_dep
 from backend.app.schemas.voice import VoiceCommandRequest, VoiceCommandResponse, VoiceSessionStatus
 from backend.app.services.voice_service import voice_service, VoiceControlService
-from backend.app.services.email_service import EmailProvider
+from backend.app.services.email_service import EmailProvider, get_email_provider
 from backend.app.core.database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,8 @@ def get_voice_session_status(
 async def websocket_voice_live(
     websocket: WebSocket,
     case_id: str,
+    db: Session = Depends(get_db),
+    email_provider: EmailProvider = Depends(get_email_provider_dep),
 ):
     """
     WebSocket endpoint for real-time bidirectional Gemini Live / voice streaming.
@@ -72,7 +74,6 @@ async def websocket_voice_live(
         "message": "CounterPulse Voice Layer active. Say 'Analyze this case' or 'What happened?'."
     })
 
-    db = SessionLocal()
     try:
         while True:
             raw_data = await websocket.receive_text()
@@ -83,26 +84,34 @@ async def websocket_voice_live(
                 await websocket.send_json({"type": "pong"})
                 continue
 
-            transcript = data.get("transcript", "")
-            if not transcript and "text" in data:
-                transcript = data["text"]
+            if cmd_type == "confirm":
+                transcript = "Yes"
+            elif cmd_type == "cancel":
+                transcript = "No"
+            else:
+                transcript = data.get("transcript", "")
+                if not transcript and "text" in data:
+                    transcript = data["text"]
 
-            if not transcript:
+            if not transcript and not data.get("audio_base64"):
                 continue
 
             sess.voice_state = "PROCESSING"
             await websocket.send_json({"type": "state_change", "voice_state": "PROCESSING"})
 
+            synthesize = data.get("synthesize", True)
             req = VoiceCommandRequest(
-                transcript=transcript,
+                transcript=transcript or "Audio stream input",
                 session_id=sess.session_id,
                 audio_base64=data.get("audio_base64"),
+                synthesize=synthesize,
             )
 
             resp = await voice_service.execute_command(
                 case_id=case_id,
                 cmd=req,
                 db=db,
+                email_provider=email_provider,
             )
 
             await websocket.send_json({
@@ -113,6 +122,19 @@ async def websocket_voice_live(
                 "requires_confirmation": resp.requires_confirmation,
                 "pending_action": resp.pending_action,
                 "action_executed": resp.action_executed,
+                "audio_base64": resp.audio_base64,
+            })
+
+            if resp.audio_base64:
+                await websocket.send_json({
+                    "type": "audio_chunk",
+                    "data": resp.audio_base64,
+                    "sample_rate": 24000,
+                })
+
+            await websocket.send_json({
+                "type": "state_change",
+                "voice_state": resp.voice_state,
             })
 
     except WebSocketDisconnect:
@@ -129,5 +151,3 @@ async def websocket_voice_live(
             })
         except Exception:
             pass
-    finally:
-        db.close()

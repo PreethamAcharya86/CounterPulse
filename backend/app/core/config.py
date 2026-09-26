@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     AI_PROVIDER: str = "gemini"  # gemini, openai, mock
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_LIVE_MODEL: str = "gemini-3.8-live"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_BASE_URL: Optional[str] = None

@@ -5,6 +5,7 @@ class VoiceCommandRequest(BaseModel):
     transcript: str = Field(..., description="Spoken or typed user command")
     session_id: Optional[str] = Field(None, description="Optional conversational session ID")
     audio_base64: Optional[str] = Field(None, description="Optional base64 encoded audio input")
+    synthesize: bool = Field(False, description="Whether to synthesize 24kHz audio via Gemini Live")
 
 class VoiceCommandResponse(BaseModel):
     intent: str = Field(..., description="Parsed command intent")
@@ -14,6 +15,7 @@ class VoiceCommandResponse(BaseModel):
     pending_action: Optional[Dict[str, Any]] = Field(None, description="Action details awaiting confirmation")
     action_executed: Optional[str] = Field(None, description="Name of consequential action executed if confirmed")
     details: Optional[Dict[str, Any]] = Field(None, description="Contextual payload (e.g. case summary, report link)")
+    audio_base64: Optional[str] = Field(None, description="Base64 encoded 24kHz linear PCM synthesized speech from Gemini Live")
 
 class VoiceSessionStatus(BaseModel):
     session_id: str
