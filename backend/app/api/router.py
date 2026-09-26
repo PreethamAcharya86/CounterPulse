@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from backend.app.api.v1 import cases, evidence, analysis, reports, call_logs, voice
+from backend.app.api.v1 import cases, evidence, analysis, reports, call_logs, voice, scam_intel
 
 api_router = APIRouter()
 
@@ -10,3 +10,4 @@ api_router.include_router(analysis.router, tags=["AI Analysis & Intelligence"])
 api_router.include_router(reports.router, tags=["Reports & Response"])
 api_router.include_router(call_logs.router, tags=["Live Call Log & Intelligence"])
 api_router.include_router(voice.router, tags=["Voice Control Layer"])
+api_router.include_router(scam_intel.router, tags=["Scam Intelligence & Controlled Conversation"])

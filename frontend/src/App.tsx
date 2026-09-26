@@ -10,12 +10,14 @@ import {
   Send,
   PhoneCall,
   Mic,
+  Brain,
 } from "lucide-react";
 import { EvidenceUploader } from "./components/EvidenceUploader";
 import { CasePassportView } from "./components/CasePassportView";
 import { ReportsView } from "./components/ReportsView";
 import { LiveCallLogView } from "./components/LiveCallLogView";
 import { VoiceControlView } from "./components/VoiceControlView";
+import { ScamIntelligenceView } from "./components/ScamIntelligenceView";
 
 interface CaseSummary {
   id: string;
@@ -30,13 +32,15 @@ export function App() {
   const [currentCaseTitle, setCurrentCaseTitle] = useState<string>("Active Investigation");
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState("");
-  const [activeTab, setActiveTab] = useState<"evidence" | "passport" | "reports" | "call-log" | "voice">("evidence");
+  const [activeTab, setActiveTab] = useState<"evidence" | "passport" | "reports" | "call-log" | "voice" | "scam-intel">("evidence");
 
-  // Sync with URL route: e.g. /cases/:caseId/passport, /cases/:caseId/reports, /cases/:caseId/call-log, /cases/:caseId/voice, or /cases/:caseId
+  // Sync with URL route: e.g. /cases/:caseId/passport, /cases/:caseId/reports, /cases/:caseId/call-log, /cases/:caseId/voice, /cases/:caseId/scam-intel, or /cases/:caseId
   useEffect(() => {
     const handleUrlChange = () => {
       const path = window.location.pathname;
-      if (path.includes("/voice")) {
+      if (path.includes("/scam-intel")) {
+        setActiveTab("scam-intel");
+      } else if (path.includes("/voice")) {
         setActiveTab("voice");
       } else if (path.includes("/call-log")) {
         setActiveTab("call-log");
@@ -58,11 +62,13 @@ export function App() {
     return () => window.removeEventListener("popstate", handleUrlChange);
   }, []);
 
-  const switchTab = (tab: "evidence" | "passport" | "reports" | "call-log" | "voice") => {
+  const switchTab = (tab: "evidence" | "passport" | "reports" | "call-log" | "voice" | "scam-intel") => {
     setActiveTab(tab);
     if (currentCaseId) {
       const subpath =
-        tab === "passport"
+        tab === "scam-intel"
+          ? "/scam-intel"
+          : tab === "passport"
           ? "/passport"
           : tab === "reports"
           ? "/reports"
@@ -308,6 +314,20 @@ export function App() {
                 </span>
               </button>
               <button
+                onClick={() => switchTab("scam-intel")}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                  activeTab === "scam-intel"
+                    ? "bg-slate-800 text-white border border-slate-700 shadow-md shadow-slate-950/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                }`}
+              >
+                <Brain className="w-4 h-4 text-cyan-400" />
+                <span>Scam Intelligence</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800/60 text-cyan-300">
+                  AI Intel
+                </span>
+              </button>
+              <button
                 onClick={() => switchTab("call-log")}
                 className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
                   activeTab === "call-log"
@@ -339,7 +359,7 @@ export function App() {
           </div>
         ) : null}
 
-        {/* View Content: Evidence vs Case Passport vs Response Reports vs Call Log vs Voice Control */}
+        {/* View Content: Evidence vs Case Passport vs Response Reports vs Call Log vs Voice Control vs Scam Intelligence */}
         {currentCaseId ? (
           activeTab === "evidence" ? (
             <EvidenceUploader caseId={currentCaseId} />
@@ -353,6 +373,12 @@ export function App() {
               caseId={currentCaseId}
               onNavigateToEvidence={() => switchTab("evidence")}
               onNavigateToPassport={() => switchTab("passport")}
+            />
+          ) : activeTab === "scam-intel" ? (
+            <ScamIntelligenceView
+              caseId={currentCaseId}
+              onNavigateToPassport={() => switchTab("passport")}
+              onNavigateToReports={() => switchTab("reports")}
             />
           ) : activeTab === "call-log" ? (
             <LiveCallLogView
