@@ -8,10 +8,14 @@ import {
   Layers,
   FileText,
   Send,
+  PhoneCall,
+  Mic,
 } from "lucide-react";
 import { EvidenceUploader } from "./components/EvidenceUploader";
 import { CasePassportView } from "./components/CasePassportView";
 import { ReportsView } from "./components/ReportsView";
+import { LiveCallLogView } from "./components/LiveCallLogView";
+import { VoiceControlView } from "./components/VoiceControlView";
 
 interface CaseSummary {
   id: string;
@@ -26,13 +30,17 @@ export function App() {
   const [currentCaseTitle, setCurrentCaseTitle] = useState<string>("Active Investigation");
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState("");
-  const [activeTab, setActiveTab] = useState<"evidence" | "passport" | "reports">("evidence");
+  const [activeTab, setActiveTab] = useState<"evidence" | "passport" | "reports" | "call-log" | "voice">("evidence");
 
-  // Sync with URL route: e.g. /cases/:caseId/passport, /cases/:caseId/reports, or /cases/:caseId
+  // Sync with URL route: e.g. /cases/:caseId/passport, /cases/:caseId/reports, /cases/:caseId/call-log, /cases/:caseId/voice, or /cases/:caseId
   useEffect(() => {
     const handleUrlChange = () => {
       const path = window.location.pathname;
-      if (path.includes("/reports")) {
+      if (path.includes("/voice")) {
+        setActiveTab("voice");
+      } else if (path.includes("/call-log")) {
+        setActiveTab("call-log");
+      } else if (path.includes("/reports")) {
         setActiveTab("reports");
       } else if (path.includes("/passport")) {
         setActiveTab("passport");
@@ -50,10 +58,19 @@ export function App() {
     return () => window.removeEventListener("popstate", handleUrlChange);
   }, []);
 
-  const switchTab = (tab: "evidence" | "passport" | "reports") => {
+  const switchTab = (tab: "evidence" | "passport" | "reports" | "call-log" | "voice") => {
     setActiveTab(tab);
     if (currentCaseId) {
-      const subpath = tab === "passport" ? "/passport" : tab === "reports" ? "/reports" : "";
+      const subpath =
+        tab === "passport"
+          ? "/passport"
+          : tab === "reports"
+          ? "/reports"
+          : tab === "call-log"
+          ? "/call-log"
+          : tab === "voice"
+          ? "/voice"
+          : "";
       const newPath = `/cases/${currentCaseId}${subpath}`;
       window.history.pushState(null, "", newPath);
     }
@@ -290,11 +307,39 @@ export function App() {
                   Reports
                 </span>
               </button>
+              <button
+                onClick={() => switchTab("call-log")}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                  activeTab === "call-log"
+                    ? "bg-slate-800 text-white border border-slate-700 shadow-md shadow-slate-950/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                }`}
+              >
+                <PhoneCall className="w-4 h-4 text-cyan-400" />
+                <span>Live Call Log</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800/60 text-cyan-300">
+                  Intel
+                </span>
+              </button>
+              <button
+                onClick={() => switchTab("voice")}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                  activeTab === "voice"
+                    ? "bg-slate-800 text-white border border-slate-700 shadow-md shadow-slate-950/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                }`}
+              >
+                <Mic className="w-4 h-4 text-purple-400" />
+                <span>Voice Control</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-purple-950 border border-purple-800/60 text-purple-300">
+                  Live
+                </span>
+              </button>
             </div>
           </div>
         ) : null}
 
-        {/* View Content: Evidence Ingest vs Case Passport vs Response Reports */}
+        {/* View Content: Evidence vs Case Passport vs Response Reports vs Call Log vs Voice Control */}
         {currentCaseId ? (
           activeTab === "evidence" ? (
             <EvidenceUploader caseId={currentCaseId} />
@@ -303,11 +348,24 @@ export function App() {
               caseId={currentCaseId}
               onNavigateToEvidence={() => switchTab("evidence")}
             />
-          ) : (
+          ) : activeTab === "reports" ? (
             <ReportsView
               caseId={currentCaseId}
               onNavigateToEvidence={() => switchTab("evidence")}
               onNavigateToPassport={() => switchTab("passport")}
+            />
+          ) : activeTab === "call-log" ? (
+            <LiveCallLogView
+              caseId={currentCaseId}
+              onNavigateToEvidence={() => switchTab("evidence")}
+              onNavigateToPassport={() => switchTab("passport")}
+            />
+          ) : (
+            <VoiceControlView
+              caseId={currentCaseId}
+              onNavigateToEvidence={() => switchTab("evidence")}
+              onNavigateToPassport={() => switchTab("passport")}
+              onNavigateToReports={() => switchTab("reports")}
             />
           )
         ) : (

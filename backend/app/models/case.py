@@ -31,3 +31,4 @@ class Case(Base):
     compromise_assessments = relationship("CompromiseAssessment", back_populates="case", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="case", cascade="all, delete-orphan")
     actions = relationship("ActionEvent", back_populates="case", cascade="all, delete-orphan")
+    call_sessions = relationship("CallSession", back_populates="case", cascade="all, delete-orphan")

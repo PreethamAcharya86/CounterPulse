@@ -5,6 +5,7 @@ from backend.app.models.indicator import Indicator
 from backend.app.models.timeline import TimelineEvent
 from backend.app.models.compromise import CompromiseAssessment
 from backend.app.models.report import Report, ActionEvent
+from backend.app.models.call_log import CallSession, CallMessage
 
 __all__ = [
     "Base",
@@ -15,4 +16,6 @@ __all__ = [
     "CompromiseAssessment",
     "Report",
     "ActionEvent",
+    "CallSession",
+    "CallMessage",
 ]
