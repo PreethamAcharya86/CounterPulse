@@ -19,6 +19,7 @@ class Case(Base):
     currency = Column(String(10), nullable=False, default="INR")
     modus_operandi = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
+    intelligence_json = Column(Text, nullable=True)
     
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

@@ -95,13 +95,7 @@ class CaseResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class CasePassportResponse(CaseResponse):
-    evidence: List[EvidenceResponse] = []
-    indicators: List[IndicatorResponse] = []
-    timeline_events: List[TimelineEventResponse] = []
-    compromise_assessments: List[CompromiseAssessmentResponse] = []
-    reports: List[ReportSummaryResponse] = []
-    actions: List[ActionEventResponse] = []
+from backend.app.schemas.passport import FraudCasePassport
 
-    class Config:
-        from_attributes = True
+CasePassportResponse = FraudCasePassport
+

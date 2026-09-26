@@ -291,6 +291,7 @@ class AIOrchestrator:
         case.currency = intel.reconstruction.currency
         case.modus_operandi = intel.reconstruction.modus_operandi
         case.summary = intel.reconstruction.summary
+        case.intelligence_json = intel.model_dump_json()
         case.status = "passport_ready"
 
         # 2. Persist Indicators (merge from evidence_intel and reconstruction)
