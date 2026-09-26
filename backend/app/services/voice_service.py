@@ -271,44 +271,102 @@ class VoiceControlService:
 
     def parse_intent(self, transcript: str) -> str:
         """
-        Identify voice intent using rule-based pattern matching with high precision.
+        Identify voice intent using pattern matching with high precision across:
+        - English
+        - Hindi (हिंदी / Romanized)
+        - Kannada (ಕನ್ನಡ / Romanized)
+
+        CRITICAL SAFETY:
+        Cancellation and negative intents are ALWAYS evaluated first before confirmation.
         """
         t = transcript.lower().strip()
 
-        # Cancellation & Negative Intents (Checked first for strict safety)
-        if re.search(r'\b(no|cancel|stop|don\'t|dont|do not|nevermind|wait|abort|reject)\b', t):
+        # 1. Cancellation & Negative Intents (Checked first for strict safety)
+        # English: no, cancel, stop, don't, do not, nevermind, abort
+        # Hindi: नहीं, मत भेजो, रोको, रद्द करो, रुको, nahi, mat bhejo, roko, radd
+        # Kannada: ಬೇಡ, ಕಳುಹಿಸಬೇಡಿ, ನಿಲ್ಲಿಸಿ, ರದ್ದುಮಾಡಿ, beda, kaluhisabedi, nillisi, raddu
+        if re.search(
+            r'\b(no|cancel|stop|don\'t|dont|do not|nevermind|wait|abort|reject|nahi|nahin|mat bhejo|roko|radd|beda|kaluhisabedi|nillisi|raddu)\b'
+            r'|नहीं|मत भेजो|रोको|रद्द|रुको|ಬೇಡ|ಕಳುಹಿಸಬೇಡಿ|ನಿಲ್ಲಿಸಿ|ರದ್ದು',
+            t
+        ):
             return "CANCEL_ACTION"
 
-        # Confirmation & Proceed
-        if re.search(r'\b(yes|confirm|proceed|send it|approve and send|do it|kalsu|haan|yes please)\b', t):
+        # 2. Consequential Dispatches (Checked before generic confirmation words like 'send'/'भेजो')
+        # Cybercrime Complaint:
+        if (
+            any(w in t for w in ["send", "dispatch", "email", "bhejo", "kaluhisi", "भेजो", "ಕಳುಹಿಸಿ"])
+            and any(w in t for w in ["complaint", "cybercrime", "ncrp", "police", "shikayat", "duru", "शिकायत", "ದೂರು", "ಸೈಬರ್"])
+        ):
+            return "SEND_CYBERCRIME_COMPLAINT"
+        # Bank Dispute:
+        if (
+            any(w in t for w in ["send", "dispatch", "email", "bhejo", "kaluhisi", "भेजो", "ಕಳುಹಿಸಿ"])
+            and any(w in t for w in ["bank", "dispute", "vivad", "vivada", "बैंक", "ಬ್ಯಾಂಕ್", "ವಿವಾದ"])
+        ):
+            return "SEND_BANK_DISPUTE"
+        # Security Advisory:
+        if (
+            any(w in t for w in ["send", "dispatch", "bhejo", "kaluhisi", "भेजो", "ಕಳುಹಿಸಿ"])
+            and any(w in t for w in ["advisory", "security", "suraksha", "bhadrata", "सलाह", "ಸಲಹೆ"])
+        ):
+            return "SEND_SECURITY_ADVISORY"
+        if ("send" in t or "email" in t or "भेजो" in t or "ಕಳುಹಿಸಿ" in t) and ("email" in t or "ईमेल" in t or "ಇಮೇಲ್" in t):
+            return "SEND_CYBERCRIME_COMPLAINT"
+
+        # 3. Confirmation & Proceed
+        # English: yes, confirm, proceed, send it, approve, do it, yes please
+        # Hindi: हाँ, भेज दो, पुष्टि, haan, bhej do, theek hai, kardo
+        # Kannada: ಹೌದು, ಮುಂದುವರಿಸಿ, ದೃಢೀಕರಿಸಿ, haudu, munduvarisi, kalsu
+        if re.search(
+            r'\b(yes|confirm|proceed|send it|approve and send|do it|haan|bhejo|bhej do|theek hai|kardo|haudu|kaluhisi|munduvarisi|kalsu|yes please)\b'
+            r'|हाँ|भेजो|भेज दो|पुष्टि|स्वीकृत|ಹೌದು|ಕಳುಹಿಸಿ|ಮುಂದುವರಿಸಿ|ದೃಢೀಕರಿಸಿ',
+            t
+        ):
             return "CONFIRM_ACTION"
 
-        # Consequential Dispatches
-        if ("send" in t or "dispatch" in t or "email" in t) and ("complaint" in t or "cybercrime" in t or "ncrp" in t or "police" in t):
-            return "SEND_CYBERCRIME_COMPLAINT"
-        if ("send" in t or "dispatch" in t or "email" in t) and ("bank" in t or "dispute" in t):
-            return "SEND_BANK_DISPUTE"
-        if ("send" in t or "dispatch" in t) and ("advisory" in t or "security" in t):
-            return "SEND_SECURITY_ADVISORY"
-        if "send" in t and "email" in t:
-            return "SEND_CYBERCRIME_COMPLAINT"
-
-        # Report Generation & Retrieval
-        if "cybercrime" in t or "cyber complaint" in t or ("read" in t and "complaint" in t):
+        # 4. Report Generation & Retrieval
+        if "cybercrime" in t or "cyber complaint" in t or (("read" in t or "padho" in t or "odi" in t or "पढ़ो" in t or "ಓದಿ" in t) and ("complaint" in t or "shikayat" in t or "duru" in t or "शिकायत" in t or "ದೂರು" in t)):
             return "READ_CYBERCRIME_COMPLAINT"
-        if "bank dispute" in t or "dispute letter" in t or "bank letter" in t:
+        if "bank dispute" in t or "dispute letter" in t or "bank letter" in t or "बैंक विवाद" in t or "ಬ್ಯಾಂಕ್ ವಿವಾದ" in t or "bank vivad" in t:
             return "GENERATE_BANK_DISPUTE"
-        if "security advisory" in t or "advisory" in t or "safety steps" in t:
+        if "security advisory" in t or "safety steps" in t or "सुरक्षा सलाह" in t or "ಭದ್ರತಾ ಸಲಹೆ" in t or "suraksha salah" in t:
             return "READ_SECURITY_ADVISORY"
 
-        # Intelligence Queries
-        if re.search(r'\b(what happened|summarize|tell me what happened|summary|incident)\b', t):
+        # 5. Intelligence Queries
+        if (
+            re.search(r'\b(what happened|summarize|tell me what happened|summary|incident|kya hua|yenayithu|enayithu|enaitu|yenaitu)\b', t)
+            or "क्या हुआ" in t
+            or "ಏನಾಯಿತು" in t
+            or "ಏನಾಯ್ತು" in t
+        ):
             return "WHAT_HAPPENED"
-        if re.search(r'\b(compromised|accounts?|credentials?|devices?|compromise assessment)\b', t):
+
+        if (
+            re.search(r'\b(compromised|accounts?|credentials?|devices?|compromise assessment|khate|khategalu)\b', t)
+            or "खाते" in t
+            or "क्या चोरी हुआ" in t
+            or "ಖಾತೆಗಳು" in t
+            or "ಏನು ಕಳವಾಗಿದೆ" in t
+        ):
             return "WHAT_COMPROMISED"
-        if re.search(r'\b(evidence|vault|files|screenshots?|documents?|show me the evidence)\b', t):
+
+        if (
+            re.search(r'\b(evidence|vault|files|screenshots?|documents?|show me the evidence|saboot|purave)\b', t)
+            or "सबूत दिखाओ" in t
+            or "साक्ष्य दिखाओ" in t
+            or "ಪುರಾವೆ ತೋರಿಸಿ" in t
+            or "ಸಾಕ್ಷ್ಯ ತೋರಿಸಿ" in t
+        ):
             return "SHOW_EVIDENCE"
-        if re.search(r'\b(analyze|investigate|run analysis|ai pipeline|orchestrate)\b', t):
+
+        if (
+            re.search(r'\b(analyze|investigate|run analysis|ai pipeline|orchestrate|vishleshan|thanihe)\b', t)
+            or "विश्लेषण" in t
+            or "जांच करो" in t
+            or "ವಿಶ್ಲೇಷಿಸಿ" in t
+            or "ತನಿಖೆ" in t
+        ):
             return "ANALYZE_CASE"
 
         return "UNKNOWN"
@@ -352,7 +410,7 @@ class VoiceControlService:
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
             config = types.LiveConnectConfig(
                 response_modalities=["AUDIO"],
-                system_instruction="You are CounterPulse Voice Layer. Read the text aloud clearly, concisely, and professionally in English."
+                system_instruction="You are CounterPulse Voice Layer. Read the text aloud clearly, concisely, and professionally in the target language (English, Hindi, or Kannada)."
             )
             audio_chunks = bytearray()
             async with client.aio.live.connect(model=settings.GEMINI_LIVE_MODEL, config=config) as session:

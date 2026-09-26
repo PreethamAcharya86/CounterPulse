@@ -331,3 +331,105 @@ def test_websocket_live_bidirectional(client: TestClient, test_case: str):
         post_msg = ws.receive_json()
         assert post_msg["type"] == "state_change"
         assert post_msg["voice_state"] == "IDLE"
+
+# 18. Multilingual Voice Command Parsing (Hindi & Kannada)
+def test_multilingual_voice_command_parsing():
+    # Hindi Commands
+    assert voice_service.parse_intent("क्या हुआ?") == "WHAT_HAPPENED"
+    assert voice_service.parse_intent("kya hua yahan?") == "WHAT_HAPPENED"
+    assert voice_service.parse_intent("शिकायत पढ़ो") == "READ_CYBERCRIME_COMPLAINT"
+    assert voice_service.parse_intent("shikayat padho") == "READ_CYBERCRIME_COMPLAINT"
+    assert voice_service.parse_intent("शिकायत ईमेल भेजो") == "SEND_CYBERCRIME_COMPLAINT"
+    assert voice_service.parse_intent("shikayat email bhejo") == "SEND_CYBERCRIME_COMPLAINT"
+    assert voice_service.parse_intent("हाँ, भेजो") == "CONFIRM_ACTION"
+    assert voice_service.parse_intent("जी हाँ") == "CONFIRM_ACTION"
+    assert voice_service.parse_intent("नहीं, मत भेजो") == "CANCEL_ACTION"
+    assert voice_service.parse_intent("mat bhejo") == "CANCEL_ACTION"
+
+    # Kannada Commands
+    assert voice_service.parse_intent("ಏನಾಯಿತು?") == "WHAT_HAPPENED"
+    assert voice_service.parse_intent("enaitu illi?") == "WHAT_HAPPENED"
+    assert voice_service.parse_intent("ದೂರು ಓದಿ") == "READ_CYBERCRIME_COMPLAINT"
+    assert voice_service.parse_intent("duru odi") == "READ_CYBERCRIME_COMPLAINT"
+    assert voice_service.parse_intent("ದೂರು ಇಮೇಲ್ ಕಳುಹಿಸಿ") == "SEND_CYBERCRIME_COMPLAINT"
+    assert voice_service.parse_intent("duru email kaluhisi") == "SEND_CYBERCRIME_COMPLAINT"
+    assert voice_service.parse_intent("ಹೌದು, ಕಳುಹಿಸಿ") == "CONFIRM_ACTION"
+    assert voice_service.parse_intent("haudu") == "CONFIRM_ACTION"
+    assert voice_service.parse_intent("ಬೇಡ, ರದ್ದುಮಾಡು") == "CANCEL_ACTION"
+    assert voice_service.parse_intent("beda") == "CANCEL_ACTION"
+
+    # Strict safety: negation must take precedence over confirmation verbs
+    assert voice_service.parse_intent("nahi bhejo") == "CANCEL_ACTION"
+    assert voice_service.parse_intent("beda kaluhisabedi") == "CANCEL_ACTION"
+
+# 19. Multilingual Voice Confirmation Flow (Hindi & Kannada Safety)
+def test_multilingual_voice_confirmation_flow(client: TestClient, test_case: str, mock_email: MockEmailProvider):
+    sid = "sess-multi-safety-1"
+    # Step 1: Speak Hindi command to send complaint
+    res1 = client.post(
+        f"/api/v1/cases/{test_case}/voice/command",
+        json={"transcript": "शिकायत ईमेल भेजो", "session_id": sid},
+    )
+    assert res1.status_code == 200
+    data1 = res1.json()
+    assert data1["intent"] == "SEND_CYBERCRIME_COMPLAINT"
+    assert data1["requires_confirmation"] is True
+
+    # Step 2: Cancel in Kannada ("ಬೇಡ") -> must cancel and NOT dispatch
+    res2 = client.post(
+        f"/api/v1/cases/{test_case}/voice/command",
+        json={"transcript": "ಬೇಡ", "session_id": sid},
+    )
+    assert res2.status_code == 200
+    assert res2.json()["intent"] == "CANCEL_ACTION"
+    assert len(mock_email.sent_messages) == 0
+
+    # Step 3: Trigger send again in Kannada
+    sid3 = "sess-multi-safety-2"
+    res3 = client.post(
+        f"/api/v1/cases/{test_case}/voice/command",
+        json={"transcript": "ದೂರು ಇಮೇಲ್ ಕಳುಹಿಸಿ", "session_id": sid3},
+    )
+    assert res3.status_code == 200
+    assert res3.json()["requires_confirmation"] is True
+
+    # Step 4: Confirm in Hindi ("हाँ, भेजो") -> must confirm and dispatch
+    res4 = client.post(
+        f"/api/v1/cases/{test_case}/voice/command",
+        json={"transcript": "हाँ, भेजो", "session_id": sid3},
+    )
+    assert res4.status_code == 200
+    assert res4.json()["intent"] == "CONFIRM_ACTION"
+    assert len(mock_email.sent_messages) == 1
+
+# 20. Synthetic Demo Case Creation with Dynamic AI Orchestration
+def test_demo_case_creation_endpoint(client: TestClient):
+    mock_ai = MockProvider()
+    AIProviderFactory.set_override_provider(mock_ai)
+    try:
+        res = client.post("/api/v1/cases/demo", json={"scenario": "digital_arrest"})
+        assert res.status_code == 201
+        data = res.json()
+        assert "id" in data
+        cid = data["id"]
+        assert "Synthetic Demo" in data["title"]
+        assert data["severity_level"].upper() in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+
+        # Verify evidence was ingested
+        ev_res = client.get(f"/api/v1/cases/{cid}/evidence")
+        assert ev_res.status_code == 200
+        ev_items = ev_res.json()
+        assert len(ev_items) >= 2  # Chat, SMS, and URL
+
+        # Verify passport is ready
+        pass_res = client.get(f"/api/v1/cases/{cid}/passport")
+        assert pass_res.status_code == 200
+
+        # Verify reports are ready
+        rep_res = client.get(f"/api/v1/cases/{cid}/reports")
+        assert rep_res.status_code == 200
+        reports = rep_res.json()
+        assert len(reports) == 3
+    finally:
+        AIProviderFactory.set_override_provider(None)
+
