@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import TypeVar, Type, Optional
@@ -74,11 +75,19 @@ class GeminiProvider(AIProvider):
                 system_instruction=sys_inst.strip(),
                 response_mime_type="application/json",
             )
-            response = client.models.generate_content(
-                model=self.model_name,
-                contents=augmented_prompt,
-                config=config,
-            )
+            if hasattr(client, "aio") and hasattr(client.aio, "models") and hasattr(client.aio.models, "generate_content"):
+                response = await client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=augmented_prompt,
+                    config=config,
+                )
+            else:
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=self.model_name,
+                    contents=augmented_prompt,
+                    config=config,
+                )
             raw_text = response.text or ""
             return RobustJSONParser.parse_and_validate(raw_text, schema)
         except Exception as e:
@@ -104,14 +113,23 @@ class GeminiProvider(AIProvider):
                 system_instruction=system_instruction,
             ) if system_instruction else None
 
-            response = client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=config,
-            )
+            if hasattr(client, "aio") and hasattr(client.aio, "models") and hasattr(client.aio.models, "generate_content"):
+                response = await client.aio.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,
+                )
+            else:
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,
+                )
             return response.text or ""
         except Exception as e:
             err_msg = str(e)
             if "429" in err_msg:
                 raise AIQuotaExhaustedError(f"Gemini API rate limit: {err_msg}")
             raise AIError(f"Gemini generation failed: {err_msg}")
+

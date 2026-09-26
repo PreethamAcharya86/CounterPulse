@@ -33,19 +33,23 @@ class AIProviderFactory:
 
         if ptype == "gemini":
             if not settings.GEMINI_API_KEY:
-                logger.warning("GEMINI_API_KEY not set. Using MockProvider as safe fallback.")
-                return MockProvider()
+                raise AIConfigurationError(
+                    "GEMINI_API_KEY is not configured. Please set GEMINI_API_KEY in .env or environment variable."
+                )
             return GeminiProvider()
 
         elif ptype == "openai":
             if not settings.OPENAI_API_KEY:
-                logger.warning("OPENAI_API_KEY not set. Using MockProvider as safe fallback.")
-                return MockProvider()
+                raise AIConfigurationError(
+                    "OPENAI_API_KEY is not configured. Please set OPENAI_API_KEY in .env or environment variable."
+                )
             return OpenAIProvider()
 
         elif ptype == "mock":
             return MockProvider()
 
         else:
-            logger.warning(f"Unknown AI provider '{ptype}', defaulting to MockProvider.")
-            return MockProvider()
+            raise AIConfigurationError(
+                f"Unsupported AI provider '{ptype}'. Allowed options: 'gemini', 'openai', 'mock'."
+            )
+

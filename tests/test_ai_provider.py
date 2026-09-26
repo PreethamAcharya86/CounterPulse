@@ -119,3 +119,49 @@ def test_gemini_and_openai_unconfigured_error():
     openai = OpenAIProvider(api_key="")
     with pytest.raises(AIConfigurationError):
         openai._check_config()
+
+def test_ai_provider_factory_unconfigured_error():
+    """Verify AIProviderFactory raises AIConfigurationError when real provider lacks credentials."""
+    with pytest.raises(AIConfigurationError) as exc_info:
+        AIProviderFactory.get_provider("gemini")
+    assert "GEMINI_API_KEY" in str(exc_info.value)
+
+    with pytest.raises(AIConfigurationError) as exc_info:
+        AIProviderFactory.get_provider("openai")
+    assert "OPENAI_API_KEY" in str(exc_info.value)
+
+    # Unsupported provider
+    with pytest.raises(AIConfigurationError) as exc_info:
+        AIProviderFactory.get_provider("unknown_provider")
+    assert "Unsupported AI provider" in str(exc_info.value)
+
+    # Explicit mock provider is still available
+    mock = AIProviderFactory.get_provider("mock")
+    assert isinstance(mock, MockProvider)
+    assert mock.provider_name == "mock"
+
+@pytest.mark.asyncio
+async def test_gemini_provider_async_execution():
+    """Verify GeminiProvider calls client.aio.models.generate_content asynchronously."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    with patch("google.genai.Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.aio.models.generate_content = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.text = '{"name": "Async Case", "amount": 1000.0, "is_active": true}'
+        mock_client.aio.models.generate_content.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        provider = GeminiProvider(api_key="test-api-key")
+        result = await provider.complete_structured("Analyze this", DummySampleSchema)
+        assert result.name == "Async Case"
+        assert result.amount == 1000.0
+        assert mock_client.aio.models.generate_content.await_count == 1
+
+        # Test generate_text
+        mock_response.text = "Analysis text output"
+        text_res = await provider.generate_text("Prompt")
+        assert text_res == "Analysis text output"
+        assert mock_client.aio.models.generate_content.await_count == 2
+
+
