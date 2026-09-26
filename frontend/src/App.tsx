@@ -32,34 +32,10 @@ export function App() {
         if (data.length > 0 && !currentCaseId) {
           setCurrentCaseId(data[0].id);
           setCurrentCaseTitle(data[0].title);
-        } else if (data.length === 0) {
-          // Auto create initial case if none exist
-          createInitialCase();
         }
       }
     } catch (err) {
       console.error("Error fetching cases:", err);
-    }
-  };
-
-  const createInitialCase = async () => {
-    try {
-      const res = await fetch("/api/v1/cases", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: "Digital Arrest & Extortion Case (Primary)",
-          description: "Initial cyber-fraud complaint intake with multimodal evidence.",
-        }),
-      });
-      if (res.ok) {
-        const newCase = await res.json();
-        setCases([newCase]);
-        setCurrentCaseId(newCase.id);
-        setCurrentCaseTitle(newCase.title);
-      }
-    } catch (err) {
-      console.error("Error creating initial case:", err);
     }
   };
 
@@ -224,8 +200,19 @@ export function App() {
         {currentCaseId ? (
           <EvidenceUploader caseId={currentCaseId} />
         ) : (
-          <div className="glass-panel p-12 rounded-2xl text-center text-slate-400">
-            Connecting to CounterPulse case registry...
+          <div className="glass-panel p-12 rounded-2xl text-center text-slate-400 space-y-4 max-w-lg mx-auto">
+            <FolderOpen className="w-12 h-12 text-slate-600 mx-auto" />
+            <h3 className="text-base font-bold text-white">No Incident Case Selected</h3>
+            <p className="text-xs text-slate-400">
+              Create a new fraud incident case or select an existing case from the header to begin evidence intake and AI reconstruction.
+            </p>
+            <button
+              onClick={() => setIsCreatingCase(true)}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-2 transition"
+            >
+              <PlusCircle className="w-4 h-4" />
+              Create Incident Case
+            </button>
           </div>
         )}
       </main>

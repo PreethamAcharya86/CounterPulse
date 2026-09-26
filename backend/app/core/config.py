@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -15,9 +16,12 @@ class Settings(BaseSettings):
     STORAGE_DIR: str = "./storage"
     
     # AI Provider Settings
-    AI_PROVIDER: str = "gemini"
+    AI_PROVIDER: str = "gemini"  # gemini, openai, mock
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_BASE_URL: Optional[str] = None
     
     # Email Settings
     EMAIL_PROVIDER: str = "resend"
