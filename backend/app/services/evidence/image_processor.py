@@ -118,21 +118,26 @@ class ImageProcessor(EvidenceProcessor):
         if ocr_results:
             for idx, item in enumerate(ocr_results):
                 box, text, score = item
-                text = text.strip()
+                text = str(text).strip()
                 if not text:
                     continue
                 extracted_lines.append(text)
-                
+
+                try:
+                    score_val = float(score)
+                except (ValueError, TypeError):
+                    score_val = 0.8
+
                 # Bounding box coordinates summary: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
                 box_summary = f"[{int(box[0][0])},{int(box[0][1])} to {int(box[2][0])},{int(box[2][1])}]"
-                conf_level = "high" if score >= 0.85 else ("medium" if score >= 0.60 else "low")
+                conf_level = "high" if score_val >= 0.85 else ("medium" if score_val >= 0.60 else "low")
 
                 segments.append(
                     ContentSegment(
                         segment_id=f"OCR-{idx+1:03d}",
                         text=text,
                         evidence_id=evidence_id,
-                        confidence=round(float(score), 3),
+                        confidence=round(score_val, 3),
                         timestamp_str=None,
                         speaker=None,
                     )
