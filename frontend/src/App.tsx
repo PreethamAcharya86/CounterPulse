@@ -7,9 +7,11 @@ import {
   Activity,
   Layers,
   FileText,
+  Send,
 } from "lucide-react";
 import { EvidenceUploader } from "./components/EvidenceUploader";
 import { CasePassportView } from "./components/CasePassportView";
+import { ReportsView } from "./components/ReportsView";
 
 interface CaseSummary {
   id: string;
@@ -24,13 +26,15 @@ export function App() {
   const [currentCaseTitle, setCurrentCaseTitle] = useState<string>("Active Investigation");
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState("");
-  const [activeTab, setActiveTab] = useState<"evidence" | "passport">("evidence");
+  const [activeTab, setActiveTab] = useState<"evidence" | "passport" | "reports">("evidence");
 
-  // Sync with URL route: e.g. /cases/:caseId/passport or /cases/:caseId
+  // Sync with URL route: e.g. /cases/:caseId/passport, /cases/:caseId/reports, or /cases/:caseId
   useEffect(() => {
     const handleUrlChange = () => {
       const path = window.location.pathname;
-      if (path.includes("/passport")) {
+      if (path.includes("/reports")) {
+        setActiveTab("reports");
+      } else if (path.includes("/passport")) {
         setActiveTab("passport");
       } else {
         setActiveTab("evidence");
@@ -46,10 +50,11 @@ export function App() {
     return () => window.removeEventListener("popstate", handleUrlChange);
   }, []);
 
-  const switchTab = (tab: "evidence" | "passport") => {
+  const switchTab = (tab: "evidence" | "passport" | "reports") => {
     setActiveTab(tab);
     if (currentCaseId) {
-      const newPath = tab === "passport" ? `/cases/${currentCaseId}/passport` : `/cases/${currentCaseId}`;
+      const subpath = tab === "passport" ? "/passport" : tab === "reports" ? "/reports" : "";
+      const newPath = `/cases/${currentCaseId}${subpath}`;
       window.history.pushState(null, "", newPath);
     }
   };
@@ -271,18 +276,38 @@ export function App() {
                   PDF
                 </span>
               </button>
+              <button
+                onClick={() => switchTab("reports")}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                  activeTab === "reports"
+                    ? "bg-slate-800 text-white border border-slate-700 shadow-md shadow-slate-950/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                }`}
+              >
+                <Send className="w-4 h-4 text-indigo-400" />
+                <span>Response Center & Dispatch</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-indigo-950 border border-indigo-800/60 text-indigo-300">
+                  Reports
+                </span>
+              </button>
             </div>
           </div>
         ) : null}
 
-        {/* View Content: Evidence Ingest vs Case Passport */}
+        {/* View Content: Evidence Ingest vs Case Passport vs Response Reports */}
         {currentCaseId ? (
           activeTab === "evidence" ? (
             <EvidenceUploader caseId={currentCaseId} />
-          ) : (
+          ) : activeTab === "passport" ? (
             <CasePassportView
               caseId={currentCaseId}
               onNavigateToEvidence={() => switchTab("evidence")}
+            />
+          ) : (
+            <ReportsView
+              caseId={currentCaseId}
+              onNavigateToEvidence={() => switchTab("evidence")}
+              onNavigateToPassport={() => switchTab("passport")}
             />
           )
         ) : (

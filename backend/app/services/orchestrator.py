@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
@@ -354,7 +355,10 @@ class AIOrchestrator:
             )
             db.add(db_comp)
 
-        # 5. Persist Draft Reports (Bank Dispute & Cybercrime Complaint)
+        # 5. Persist Draft Reports (Bank Dispute, Cybercrime Complaint, Security Advisory)
+        ev_refs = [e.id for e in case.evidence]
+        ev_refs_json = json.dumps(ev_refs) if ev_refs else None
+
         # Bank Dispute
         existing_bank_rep = (
             db.query(Report)
@@ -368,11 +372,14 @@ class AIOrchestrator:
                 title=intel.response_packages.bank_dispute_subject,
                 content_markdown=intel.response_packages.bank_dispute_body,
                 approval_status="draft",
+                evidence_references_json=ev_refs_json,
             )
             db.add(bank_rep)
         else:
             existing_bank_rep.title = intel.response_packages.bank_dispute_subject
             existing_bank_rep.content_markdown = intel.response_packages.bank_dispute_body
+            if not existing_bank_rep.evidence_references_json:
+                existing_bank_rep.evidence_references_json = ev_refs_json
 
         # Cybercrime Complaint
         existing_cyber_rep = (
@@ -387,11 +394,38 @@ class AIOrchestrator:
                 title=intel.response_packages.cybercrime_complaint_subject,
                 content_markdown=intel.response_packages.cybercrime_complaint_body,
                 approval_status="draft",
+                evidence_references_json=ev_refs_json,
             )
             db.add(cyber_rep)
         else:
             existing_cyber_rep.title = intel.response_packages.cybercrime_complaint_subject
             existing_cyber_rep.content_markdown = intel.response_packages.cybercrime_complaint_body
+            if not existing_cyber_rep.evidence_references_json:
+                existing_cyber_rep.evidence_references_json = ev_refs_json
+
+        # Emergency Security Advisory
+        existing_sec_rep = (
+            db.query(Report)
+            .filter(Report.case_id == case.id, Report.report_type == "security_advisory")
+            .first()
+        )
+        sec_title = "Emergency Incident Containment & Security Advisory"
+        sec_body = intel.response_packages.emergency_advisory
+        if not existing_sec_rep:
+            sec_rep = Report(
+                case_id=case.id,
+                report_type="security_advisory",
+                title=sec_title,
+                content_markdown=sec_body,
+                approval_status="draft",
+                evidence_references_json=ev_refs_json,
+            )
+            db.add(sec_rep)
+        else:
+            existing_sec_rep.title = sec_title
+            existing_sec_rep.content_markdown = sec_body
+            if not existing_sec_rep.evidence_references_json:
+                existing_sec_rep.evidence_references_json = ev_refs_json
 
         db.commit()
         db.refresh(case)

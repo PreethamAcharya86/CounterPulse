@@ -13,10 +13,15 @@ class Report(Base):
     title = Column(String(255), nullable=False)
     content_markdown = Column(Text, nullable=False)
     content_html = Column(Text, nullable=True)
-    approval_status = Column(String(30), nullable=False, default="draft")  # draft, reviewed, approved, dispatched
+    approval_status = Column(String(30), nullable=False, default="draft")  # draft, reviewed, approved, sent, failed
     approved_at = Column(DateTime, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+    recipient_email = Column(String(255), nullable=True)
+    error_message = Column(Text, nullable=True)
     pdf_path = Column(String(512), nullable=True)
+    evidence_references_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     case = relationship("Case", back_populates="reports")

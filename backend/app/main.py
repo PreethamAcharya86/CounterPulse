@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
 from backend.app.core.config import settings
-from backend.app.core.database import engine, Base
+from backend.app.core.database import engine, Base, run_migrations
 import backend.app.models  # Ensures all ORM models are registered with Base
 from backend.app.api.router import api_router
 
@@ -15,6 +15,8 @@ async def lifespan(app: FastAPI):
     Path(settings.STORAGE_DIR).mkdir(parents=True, exist_ok=True)
     # Create database tables if not existing
     Base.metadata.create_all(bind=engine)
+    # Ensure newly added columns exist in existing SQLite databases
+    run_migrations(engine)
     yield
 
 app = FastAPI(
