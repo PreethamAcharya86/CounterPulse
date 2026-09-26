@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   FileDown,
   Clock,
   AlertTriangle,
   CheckCircle2,
-  HelpCircle,
   Activity,
   FileText,
   Copy,
@@ -18,7 +17,6 @@ import {
   Shield,
   ArrowRight,
   Database,
-  ExternalLink,
 } from "lucide-react";
 
 export interface IncidentInfo {
@@ -108,7 +106,7 @@ export const CasePassportView: React.FC<Props> = ({ caseId, onNavigateToEvidence
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
 
-  const fetchPassport = async () => {
+  const fetchPassport = useCallback(async () => {
     if (!caseId) return;
     setIsLoading(true);
     setErrorStatus(null);
@@ -138,7 +136,7 @@ export const CasePassportView: React.FC<Props> = ({ caseId, onNavigateToEvidence
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [caseId]);
 
   const handleTriggerAnalysis = async () => {
     setIsAnalyzing(true);
@@ -202,7 +200,7 @@ export const CasePassportView: React.FC<Props> = ({ caseId, onNavigateToEvidence
 
   useEffect(() => {
     fetchPassport();
-  }, [caseId]);
+  }, [fetchPassport]);
 
   // Loading State
   if (isLoading) {

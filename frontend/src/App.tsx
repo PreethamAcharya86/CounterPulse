@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Shield,
   Phone,
@@ -6,8 +6,10 @@ import {
   PlusCircle,
   Activity,
   Layers,
+  FileText,
 } from "lucide-react";
 import { EvidenceUploader } from "./components/EvidenceUploader";
+import { CasePassportView } from "./components/CasePassportView";
 
 interface CaseSummary {
   id: string;
@@ -22,8 +24,37 @@ export function App() {
   const [currentCaseTitle, setCurrentCaseTitle] = useState<string>("Active Investigation");
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState("");
+  const [activeTab, setActiveTab] = useState<"evidence" | "passport">("evidence");
 
-  const fetchCases = async () => {
+  // Sync with URL route: e.g. /cases/:caseId/passport or /cases/:caseId
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const path = window.location.pathname;
+      if (path.includes("/passport")) {
+        setActiveTab("passport");
+      } else {
+        setActiveTab("evidence");
+      }
+      const match = path.match(/\/cases\/([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        setCurrentCaseId(match[1]);
+      }
+    };
+
+    handleUrlChange();
+    window.addEventListener("popstate", handleUrlChange);
+    return () => window.removeEventListener("popstate", handleUrlChange);
+  }, []);
+
+  const switchTab = (tab: "evidence" | "passport") => {
+    setActiveTab(tab);
+    if (currentCaseId) {
+      const newPath = tab === "passport" ? `/cases/${currentCaseId}/passport` : `/cases/${currentCaseId}`;
+      window.history.pushState(null, "", newPath);
+    }
+  };
+
+  const fetchCases = useCallback(async () => {
     try {
       const res = await fetch("/api/v1/cases");
       if (res.ok) {
@@ -33,6 +64,9 @@ export function App() {
           if (!currentCaseId || !data.some((c) => c.id === currentCaseId)) {
             setCurrentCaseId(data[0].id);
             setCurrentCaseTitle(data[0].title);
+          } else {
+            const found = data.find((c) => c.id === currentCaseId);
+            if (found) setCurrentCaseTitle(found.title);
           }
         } else {
           setCurrentCaseId("");
@@ -41,6 +75,16 @@ export function App() {
       }
     } catch (err) {
       console.error("Error fetching cases:", err);
+    }
+  }, [currentCaseId]);
+
+  const handleSelectCase = (id: string) => {
+    const sel = cases.find((c) => c.id === id);
+    if (sel) {
+      setCurrentCaseId(sel.id);
+      setCurrentCaseTitle(sel.title);
+      const newPath = activeTab === "passport" ? `/cases/${sel.id}/passport` : `/cases/${sel.id}`;
+      window.history.pushState(null, "", newPath);
     }
   };
 
@@ -62,15 +106,18 @@ export function App() {
         setCurrentCaseTitle(created.title);
         setNewCaseTitle("");
         setIsCreatingCase(false);
+        const newPath = activeTab === "passport" ? `/cases/${created.id}/passport` : `/cases/${created.id}`;
+        window.history.pushState(null, "", newPath);
       }
     } catch (err) {
+      console.error("Failed to create case:", err);
       alert("Failed to create case");
     }
   };
 
   useEffect(() => {
     fetchCases();
-  }, []);
+  }, [fetchCases]);
 
   return (
     <div className="min-h-screen bg-[#0b0f17] text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
@@ -109,13 +156,7 @@ export function App() {
               {cases.length > 0 ? (
                 <select
                   value={currentCaseId}
-                  onChange={(e) => {
-                    const sel = cases.find((c) => c.id === e.target.value);
-                    if (sel) {
-                      setCurrentCaseId(sel.id);
-                      setCurrentCaseTitle(sel.title);
-                    }
-                  }}
+                  onChange={(e) => handleSelectCase(e.target.value)}
                   className="bg-transparent text-slate-200 focus:outline-none cursor-pointer max-w-[140px] sm:max-w-[200px] truncate"
                 >
                   {cases.map((c) => (
@@ -177,35 +218,73 @@ export function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
         {/* Case Context Header */}
         {currentCaseId ? (
-          <div className="glass-panel p-6 rounded-2xl border border-slate-800/90 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold text-white">{currentCaseTitle}</h1>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800 text-emerald-400">
-                  ACTIVE
-                </span>
+          <div className="space-y-6">
+            <div className="glass-panel p-6 rounded-2xl border border-slate-800/90 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl font-bold text-white">{currentCaseTitle}</h1>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800 text-emerald-400">
+                    ACTIVE
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 font-mono">
+                  CASE UUID: {currentCaseId} | Golden Hour Response Window Active
+                </p>
               </div>
-              <p className="text-xs text-slate-400 font-mono">
-                CASE UUID: {currentCaseId} | Golden Hour Response Window Active
-              </p>
+
+              <div className="flex items-center gap-4 text-xs text-slate-400">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                  <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Evidence Pipeline: Ready</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                  <Layers className="w-3.5 h-3.5 text-sky-400" />
+                  <span>OCR: RapidOCR ONNX</span>
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center gap-4 text-xs text-slate-400">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800">
-                <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Evidence Pipeline: Ready</span>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800">
-                <Layers className="w-3.5 h-3.5 text-sky-400" />
-                <span>OCR: RapidOCR ONNX</span>
-              </div>
+            {/* Navigation Tabs Switcher */}
+            <div className="flex items-center gap-2 border-b border-slate-800/80 pb-3">
+              <button
+                onClick={() => switchTab("evidence")}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                  activeTab === "evidence"
+                    ? "bg-slate-800 text-white border border-slate-700 shadow-md shadow-slate-950/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                }`}
+              >
+                <Layers className="w-4 h-4 text-emerald-400" />
+                <span>Evidence Intake & Vault</span>
+              </button>
+              <button
+                onClick={() => switchTab("passport")}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition cursor-pointer ${
+                  activeTab === "passport"
+                    ? "bg-slate-800 text-white border border-slate-700 shadow-md shadow-slate-950/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60"
+                }`}
+              >
+                <FileText className="w-4 h-4 text-cyan-400" />
+                <span>Fraud Case Passport & Dossier</span>
+                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800/60 text-cyan-300">
+                  PDF
+                </span>
+              </button>
             </div>
           </div>
         ) : null}
 
-        {/* Core Evidence Intake Stream or Clean Empty State */}
+        {/* View Content: Evidence Ingest vs Case Passport */}
         {currentCaseId ? (
-          <EvidenceUploader caseId={currentCaseId} />
+          activeTab === "evidence" ? (
+            <EvidenceUploader caseId={currentCaseId} />
+          ) : (
+            <CasePassportView
+              caseId={currentCaseId}
+              onNavigateToEvidence={() => switchTab("evidence")}
+            />
+          )
         ) : (
           <div className="glass-panel p-12 rounded-2xl text-center border border-slate-800/80 max-w-lg mx-auto space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-emerald-950/50 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto shadow-lg shadow-emerald-950/30">

@@ -444,3 +444,92 @@ def test_long_text_does_not_crash_pdf_generation():
     reader = PdfReader(io.BytesIO(pdf_bytes))
     # Document should cleanly break across multiple pages
     assert len(reader.pages) >= 2
+
+
+# -------------------------------------------------------------
+# 16. Real Data Validation: Evidence -> AI -> CaseIntelligence -> Passport -> PDF
+# -------------------------------------------------------------
+def test_end_to_end_real_demo_evidence_flow(client):
+    """
+    Validates complete pipeline using actual files in demo_evidence/:
+    demo_evidence files -> Ingestion -> AI Orchestration -> CaseIntelligence -> Passport -> PDF.
+    """
+    import os
+    mock = MockProvider()
+    from backend.app.services.ai.factory import AIProviderFactory
+    AIProviderFactory.set_override_provider(mock)
+
+    try:
+        # 1. Create Case
+        create_res = client.post(
+            "/api/v1/cases",
+            json={
+                "title": "Real Demo Evidence Ingestion Case",
+                "description": "Validation with files from demo_evidence directory",
+            },
+        )
+        assert create_res.status_code == 201
+        case_id = create_res.json()["id"]
+
+        # Read demo evidence files
+        sms_path = os.path.join("demo_evidence", "bank_debit_sms.txt")
+        chat_path = os.path.join("demo_evidence", "extortion_whatsapp_chat.txt")
+
+        with open(sms_path, "r", encoding="utf-8") as f:
+            sms_text = f.read()
+
+        with open(chat_path, "r", encoding="utf-8") as f:
+            chat_text = f.read()
+
+        # Ingest Bank SMS
+        sms_res = client.post(
+            f"/api/v1/cases/{case_id}/evidence/text",
+            json={"text": sms_text, "evidence_type": "text"},
+        )
+        assert sms_res.status_code == 201
+        sms_ev_id = sms_res.json()["id"]
+
+        # Ingest WhatsApp Chat
+        chat_res = client.post(
+            f"/api/v1/cases/{case_id}/evidence/chat",
+            json={"chat_text": chat_text, "platform": "whatsapp"},
+        )
+        assert chat_res.status_code == 201
+        chat_ev_id = chat_res.json()["id"]
+
+        # Trigger AI Analysis
+        analyze_res = client.post(f"/api/v1/cases/{case_id}/analyze")
+        assert analyze_res.status_code == 200
+        intel = analyze_res.json()
+        assert intel["case_id"] == case_id
+
+        # Retrieve Passport
+        passport_res = client.get(f"/api/v1/cases/{case_id}/passport")
+        assert passport_res.status_code == 200
+        passport_data = passport_res.json()
+
+        assert passport_data["case_id"] == case_id
+        assert passport_data["status"] == "passport_ready"
+        assert passport_data["incident"]["category"]
+        assert passport_data["financial"]["loss"] is not None
+        assert passport_data["financial"]["loss"] > 0
+        assert len(passport_data["timeline"]) >= 2
+        assert len(passport_data["indicators"]) > 0
+
+        # Verify Provenance
+        assert any(ev["evidence_id"] in (sms_ev_id, chat_ev_id) for ev in passport_data["evidence_items"])
+
+        # Generate and verify PDF
+        pdf_res = client.get(f"/api/v1/cases/{case_id}/passport/pdf")
+        assert pdf_res.status_code == 200
+        assert pdf_res.headers["content-type"] == "application/pdf"
+        assert f"CounterPulse_Case_{case_id}.pdf" in pdf_res.headers["content-disposition"]
+
+        reader = PdfReader(io.BytesIO(pdf_res.content))
+        assert len(reader.pages) >= 1
+        pdf_text = " ".join([page.extract_text() for page in reader.pages])
+        assert case_id in pdf_text
+        assert "COUNTERPULSE AI" in pdf_text
+    finally:
+        AIProviderFactory.set_override_provider(None)
+
