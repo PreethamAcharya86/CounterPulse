@@ -16,7 +16,9 @@ class Evidence(Base):
     file_path = Column(String(512), nullable=True)
     raw_content = Column(Text, nullable=True)  # extracted text or transcript
     sha256_hash = Column(String(64), nullable=True)
-    processing_status = Column(String(50), nullable=False, default="received")  # received, extracted, processed, failed
+    processing_status = Column(String(50), nullable=False, default="uploaded")  # uploaded, processing, processed, failed
+    normalized_json = Column(Text, nullable=True)  # JSON-encoded normalized evidence data
+    error_message = Column(Text, nullable=True)    # Processing error details if failed
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
