@@ -609,8 +609,8 @@ class VoiceControlService:
                 )
 
             try:
-                intel = await self.orchestrator.run_pipeline(
-                    case_id=case_id, db=db, provider=ai_provider
+                intel = await self.orchestrator.analyze_case(
+                    case_id=case_id, db=db, provider_override=ai_provider, persist_to_db=True
                 )
                 loss_str = f"₹{case.financial_loss:,.2f}" if case.financial_loss else "undisclosed amounts"
                 resp = (

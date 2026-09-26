@@ -53,6 +53,21 @@ class AIProvider(ABC):
         pass
 
     @abstractmethod
+    async def complete_multimodal_structured(
+        self,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str,
+        schema: Type[T],
+        system_instruction: Optional[str] = None,
+    ) -> T:
+        """
+        Execute completion with multimodal image input (raw image bytes + MIME type)
+        and guaranteed structured JSON output adhering to target Pydantic schema.
+        """
+        pass
+
+    @abstractmethod
     async def generate_text(
         self,
         prompt: str,

@@ -63,6 +63,20 @@ class MockProvider(AIProvider):
         """Register a dynamic generator handler for a schema name."""
         self._custom_handlers[schema_name.lower()] = handler
 
+    async def complete_multimodal_structured(
+        self,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str,
+        schema: Type[T],
+        system_instruction: Optional[str] = None,
+    ) -> T:
+        return await self.complete_structured(
+            prompt=prompt,
+            schema=schema,
+            system_instruction=system_instruction,
+        )
+
     async def complete_structured(
         self,
         prompt: str,

@@ -61,6 +61,12 @@ async def get_case_intelligence(
     if not case:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Case '{case_id}' not found.")
 
+    if case.intelligence_json:
+        try:
+            return CaseIntelligence.model_validate_json(case.intelligence_json)
+        except Exception as e:
+            logger.warning("Could not parse cached intelligence_json for case %s: %s", case_id, e)
+
     try:
         intelligence = await orchestrator.analyze_case(
             case_id=case_id,

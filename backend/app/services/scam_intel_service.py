@@ -210,12 +210,12 @@ class ScamIntelligenceService:
                     raise ValueError(f"Evidence '{req.evidence_id}' not found for case '{case_id}'.")
                 conversation_text = ev.raw_content
             else:
-                # Fallback to chat/text evidence or call sessions on the case
+                # Fallback to chat/text/image evidence or call sessions on the case
                 chat_ev = (
                     db.query(Evidence)
                     .filter(
                         Evidence.case_id == case_id,
-                        Evidence.evidence_type.in_(["chat", "text"]),
+                        Evidence.evidence_type.in_(["chat", "text", "image", "pdf", "url"]),
                         Evidence.raw_content.isnot(None),
                     )
                     .first()
@@ -270,8 +270,8 @@ class ScamIntelligenceService:
             except Exception as e:
                 logger.warning("AI provider unavailable for scam intelligence: %s", e)
 
-        scam_type = "Digital Extortion / Impersonation"
-        threat_assessment = "Suspect executed psychological intimidation to coerce unauthorized financial transfer."
+        scam_type = case.scam_category or "Under Investigation"
+        threat_assessment = case.modus_operandi or "Analysis of provided evidentiary dialogue in progress."
         tactics_observed: List[str] = []
         psychological_triggers: List[str] = []
         claimed_entities: List[ScamIntelligenceItem] = []

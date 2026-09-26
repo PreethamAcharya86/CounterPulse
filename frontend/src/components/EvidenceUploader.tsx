@@ -405,34 +405,40 @@ export const EvidenceUploader: React.FC<Props> = ({ caseId, onEvidenceChange }) 
         {/* Tab 2: Paste Text / SMS */}
         {activeTab === "text" && (
           <div className="mt-5 space-y-3">
-            <div className="flex gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs text-slate-400 font-medium">Text Type:</span>
               <button
                 type="button"
-                onClick={() => {
-                  setTextSubtype("sms");
-                  setPastedText("INR 95,000.00 debited from A/c ending in 4321 on 26-SEP-26 via UPI Ref 987654321012. If not you, report immediately to 1930.");
-                }}
-                className="text-xs px-2.5 py-1 bg-slate-800/70 hover:bg-slate-800 text-slate-300 rounded border border-slate-700 transition"
+                onClick={() => setTextSubtype("text")}
+                className={`text-xs px-2.5 py-1 rounded-lg border transition ${
+                  textSubtype === "text"
+                    ? "bg-emerald-950/70 border-emerald-500/50 text-emerald-300 font-medium"
+                    : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
               >
-                + Insert Bank SMS Sample
+                Incident Narrative
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setTextSubtype("text");
-                  setPastedText("I received a call claiming my Aadhaar was involved in 14 fraudulent SIM cards in Mumbai. The caller impersonated CBI Inspector Sharma and demanded immediate deposit to clear my name.");
-                }}
-                className="text-xs px-2.5 py-1 bg-slate-800/70 hover:bg-slate-800 text-slate-300 rounded border border-slate-700 transition"
+                onClick={() => setTextSubtype("sms")}
+                className={`text-xs px-2.5 py-1 rounded-lg border transition ${
+                  textSubtype === "sms"
+                    ? "bg-emerald-950/70 border-emerald-500/50 text-emerald-300 font-medium"
+                    : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
               >
-                + Insert Incident Narrative Sample
+                Bank SMS / Debit Alert
               </button>
             </div>
-
             <textarea
               rows={4}
               value={pastedText}
               onChange={(e) => setPastedText(e.target.value)}
-              placeholder="Paste bank debit alert, SMS message, email body, or incident narrative..."
+              placeholder={
+                textSubtype === "sms"
+                  ? "Paste raw bank SMS debit notification (e.g. INR 95,000 debited from A/c ending...)..."
+                  : "Paste narrative of the incident, scammer demands, or written interaction..."
+              }
               className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500 font-mono"
             />
             <div className="flex justify-end">
@@ -451,23 +457,6 @@ export const EvidenceUploader: React.FC<Props> = ({ caseId, onEvidenceChange }) 
         {/* Tab 3: WhatsApp Chat */}
         {activeTab === "chat" && (
           <div className="mt-5 space-y-3">
-            <div className="flex gap-2 mb-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setChatText(
-                    "[10:31, 26/09/2026] Unknown Officer: Your bank account has been flagged by Cyber Crime.\n" +
-                    "[10:32, 26/09/2026] Unknown Officer: Install AnyDesk app immediately and transfer ₹95,000 to clearing account.\n" +
-                    "[10:33, 26/09/2026] Victim: Why should I do that?\n" +
-                    "[10:34, 26/09/2026] Unknown Officer: Warrant will be issued to your residence if not done in 15 minutes."
-                  );
-                }}
-                className="text-xs px-2.5 py-1 bg-slate-800/70 hover:bg-slate-800 text-slate-300 rounded border border-slate-700 transition"
-              >
-                + Insert Sample WhatsApp Conversation
-              </button>
-            </div>
-
             <textarea
               rows={5}
               value={chatText}

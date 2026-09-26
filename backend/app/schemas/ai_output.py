@@ -129,6 +129,22 @@ class EvidenceIntelligenceOutput(BaseModel):
     dates_mentioned: List[str] = Field(default_factory=list)
     entities_mentioned: List[str] = Field(default_factory=list)
 
+class MessageExcerpt(BaseModel):
+    speaker: str = Field("unknown", description="Sender or speaker e.g. suspect, victim, system")
+    text: str = Field(..., description="Message text content")
+    timestamp_str: Optional[str] = Field(None, description="Timestamp if visible in image (e.g. 10:32 AM)")
+
+class ImageMultimodalOutput(BaseModel):
+    full_transcript: str = Field(..., description="Complete readable transcription of all conversation messages and text visible in the screenshot")
+    messages: List[MessageExcerpt] = Field(default_factory=list, description="Structured message sequence visible in the chat/screenshot")
+    extracted_indicators: List[ExtractedIndicator] = Field(default_factory=list, description="Specific indicators: upi_id, phone_number, url, email, suspect_name, organization, account_number")
+    financial_amounts: List[str] = Field(default_factory=list, description="Monetary demands or transactions mentioned e.g. ₹7,800, ₹25,000")
+    claimed_authorities: List[str] = Field(default_factory=list, description="Claimed organizations e.g. Mumbai Police, FedEx, BESCOM, SBI")
+    urgency_tactics: List[str] = Field(default_factory=list, description="Psychological pressure or threats e.g. immediate arrest, power cutoff")
+    scam_category: Optional[str] = Field(None, description="Apparent scam category e.g. Digital Arrest, Electricity Bill Scam, Job Scam")
+    remote_access_requested: bool = Field(False, description="Whether remote access tools (AnyDesk, QuickSupport, RustDesk) were requested")
+    credentials_requested: bool = Field(False, description="Whether OTP, PIN, password or card details were requested")
+
 class ResponsePackagesOutput(BaseModel):
     bank_dispute_subject: str = Field(..., description="Subject line for official bank dispute")
     bank_dispute_body: str = Field(..., description="Formal bank dispute declaration text adhering to standard banking guidelines")

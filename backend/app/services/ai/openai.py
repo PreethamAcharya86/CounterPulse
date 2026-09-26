@@ -44,6 +44,67 @@ class OpenAIProvider(AIProvider):
                 "OPENAI_API_KEY is not configured. Please add OPENAI_API_KEY in .env or set environment variable."
             )
 
+    async def complete_multimodal_structured(
+        self,
+        prompt: str,
+        image_bytes: bytes,
+        mime_type: str,
+        schema: Type[T],
+        system_instruction: Optional[str] = None,
+    ) -> T:
+        self._check_config()
+        import base64
+
+        b64_img = base64.b64encode(image_bytes).decode("utf-8")
+        data_uri = f"data:{mime_type};base64,{b64_img}"
+
+        schema_json = json.dumps(schema.model_json_schema(), indent=2)
+        sys_msg = (
+            (system_instruction or "You are an expert digital forensics investigator analyzing mobile screenshots.")
+            + f"\nCRITICAL: Respond ONLY with a valid JSON object strictly conforming to this JSON schema:\n{schema_json}"
+        )
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": sys_msg},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": data_uri}},
+                    ],
+                },
+            ],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.1,
+        }
+
+        url = f"{self.base_url}/chat/completions"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.post(url, headers=headers, json=payload)
+                if response.status_code == 429:
+                    raise AIQuotaExhaustedError("OpenAI API rate limit exceeded.")
+                elif response.status_code in (500, 502, 503, 504):
+                    raise AIProviderUnavailableError(f"OpenAI service unavailable (HTTP {response.status_code}).")
+                elif response.status_code != 200:
+                    raise AIError(f"OpenAI API error {response.status_code}: {response.text}")
+
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                return RobustJSONParser.parse_and_validate(content, schema)
+            except (AIError, AIQuotaExhaustedError, AIProviderUnavailableError, AISchemaValidationError):
+                raise
+            except Exception as e:
+                raise AIError(f"Failed OpenAI multimodal request: {str(e)}") from e
+
     async def complete_structured(
         self,
         prompt: str,

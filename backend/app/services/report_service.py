@@ -81,11 +81,12 @@ class ReportService:
         refs: List[str] = []
         if case.evidence:
             refs.extend([e.id for e in case.evidence])
-        if intel and intel.evidence_intelligence:
-            for ind in intel.evidence_intelligence.extracted_indicators:
+        ev_intel = getattr(intel, "evidence_intel", None) or getattr(intel, "evidence_intelligence", None) if intel else None
+        if ev_intel:
+            for ind in getattr(ev_intel, "extracted_indicators", []):
                 if ind.source_evidence_id and ind.source_evidence_id not in refs:
                     refs.append(ind.source_evidence_id)
-            for fin in intel.evidence_intelligence.extracted_financials:
+            for fin in getattr(ev_intel, "extracted_financials", []):
                 if fin.source_evidence_id and fin.source_evidence_id not in refs:
                     refs.append(fin.source_evidence_id)
         return refs

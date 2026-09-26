@@ -111,9 +111,9 @@ export function ScamIntelligenceView({
   onNavigateToPassport,
   onNavigateToReports,
 }: ScamIntelligenceViewProps) {
-  const [sourceType, setSourceType] = useState<"preset" | "evidence" | "custom">("preset");
+  const [sourceType, setSourceType] = useState<"preset" | "evidence" | "custom">("evidence");
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("digital_arrest");
-  const [conversationText, setConversationText] = useState<string>(PRESET_SCENARIOS[0].conversation);
+  const [conversationText, setConversationText] = useState<string>("");
   const [customText, setCustomText] = useState<string>("");
   const [caseEvidenceList, setCaseEvidenceList] = useState<CaseEvidenceItem[]>([]);
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string>("");

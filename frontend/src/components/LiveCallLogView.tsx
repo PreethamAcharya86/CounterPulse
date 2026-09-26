@@ -211,7 +211,7 @@ export const LiveCallLogView: React.FC<Props> = ({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              title: "Digital Arrest & Extortion Call",
+              title: "Incoming Suspect Call Log",
               caller_label: "Suspect / Impersonator",
               callee_label: "Victim / Callee",
             }),

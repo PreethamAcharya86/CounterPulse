@@ -97,6 +97,21 @@ class AIOrchestrator:
 
         return await agent.run(context, provider)
 
+    async def run_pipeline(
+        self,
+        case_id: str,
+        db: Session,
+        provider: Optional[AIProvider] = None,
+        persist_to_db: bool = True,
+    ) -> CaseIntelligence:
+        """Alias for analyze_case ensuring backwards-compatibility across voice and API callers."""
+        return await self.analyze_case(
+            case_id=case_id,
+            db=db,
+            provider_override=provider,
+            persist_to_db=persist_to_db,
+        )
+
     async def analyze_case(
         self,
         case_id: str,
