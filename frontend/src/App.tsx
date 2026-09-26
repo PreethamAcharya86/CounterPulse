@@ -29,37 +29,18 @@ export function App() {
       if (res.ok) {
         const data: CaseSummary[] = await res.json();
         setCases(data);
-        if (data.length > 0 && !currentCaseId) {
-          setCurrentCaseId(data[0].id);
-          setCurrentCaseTitle(data[0].title);
-        } else if (data.length === 0) {
-          // Auto create initial case if none exist
-          createInitialCase();
+        if (data.length > 0) {
+          if (!currentCaseId || !data.some((c) => c.id === currentCaseId)) {
+            setCurrentCaseId(data[0].id);
+            setCurrentCaseTitle(data[0].title);
+          }
+        } else {
+          setCurrentCaseId("");
+          setCurrentCaseTitle("");
         }
       }
     } catch (err) {
       console.error("Error fetching cases:", err);
-    }
-  };
-
-  const createInitialCase = async () => {
-    try {
-      const res = await fetch("/api/v1/cases", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: "Digital Arrest & Extortion Case (Primary)",
-          description: "Initial cyber-fraud complaint intake with multimodal evidence.",
-        }),
-      });
-      if (res.ok) {
-        const newCase = await res.json();
-        setCases([newCase]);
-        setCurrentCaseId(newCase.id);
-        setCurrentCaseTitle(newCase.title);
-      }
-    } catch (err) {
-      console.error("Error creating initial case:", err);
     }
   };
 
@@ -144,7 +125,7 @@ export function App() {
                   ))}
                 </select>
               ) : (
-                <span className="text-slate-400">Loading case...</span>
+                <span className="text-slate-400">No cases</span>
               )}
               <button
                 onClick={() => setIsCreatingCase(true)}
@@ -195,37 +176,54 @@ export function App() {
       {/* Main Workspace */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
         {/* Case Context Header */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800/90 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-white">{currentCaseTitle}</h1>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800 text-emerald-400">
-                ACTIVE
-              </span>
+        {currentCaseId ? (
+          <div className="glass-panel p-6 rounded-2xl border border-slate-800/90 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold text-white">{currentCaseTitle}</h1>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/70 border border-emerald-800 text-emerald-400">
+                  ACTIVE
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 font-mono">
+                CASE UUID: {currentCaseId} | Golden Hour Response Window Active
+              </p>
             </div>
-            <p className="text-xs text-slate-400 font-mono">
-              CASE UUID: {currentCaseId || "Initializing..."} | Golden Hour Response Window Active
-            </p>
-          </div>
 
-          <div className="flex items-center gap-4 text-xs text-slate-400">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800">
-              <Activity className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Evidence Pipeline: Ready</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800">
-              <Layers className="w-3.5 h-3.5 text-sky-400" />
-              <span>OCR: RapidOCR ONNX</span>
+            <div className="flex items-center gap-4 text-xs text-slate-400">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Evidence Pipeline: Ready</span>
+              </div>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                <Layers className="w-3.5 h-3.5 text-sky-400" />
+                <span>OCR: RapidOCR ONNX</span>
+              </div>
             </div>
           </div>
-        </div>
+        ) : null}
 
-        {/* Core Evidence Intake Stream */}
+        {/* Core Evidence Intake Stream or Clean Empty State */}
         {currentCaseId ? (
           <EvidenceUploader caseId={currentCaseId} />
         ) : (
-          <div className="glass-panel p-12 rounded-2xl text-center text-slate-400">
-            Connecting to CounterPulse case registry...
+          <div className="glass-panel p-12 rounded-2xl text-center border border-slate-800/80 max-w-lg mx-auto space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-950/50 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto shadow-lg shadow-emerald-950/30">
+              <FolderOpen className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-lg font-bold text-white">No Incident Case Selected</h2>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                Create a new fraud incident case from real complaint details to begin evidence intake and multimodal forensic analysis.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsCreatingCase(true)}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-2 shadow-lg shadow-emerald-950/50 transition cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4" />
+              Create Incident Case
+            </button>
           </div>
         )}
       </main>
