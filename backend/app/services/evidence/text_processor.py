@@ -108,6 +108,48 @@ class TextProcessor(EvidenceProcessor):
                     )
                 )
 
+            # UPI handles
+            upis = re.findall(r"\b[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}\b", para)
+            for upi in upis:
+                if not upi.endswith((".com", ".org", ".net", ".edu", ".gov")) or upi.lower().endswith(("@upi", "@okhdfcbank", "@oksbi", "@paytm", "@icici")):
+                    provenance_items.append(
+                        ProvenanceItem(
+                            source_evidence_id=evidence_id,
+                            source_reference=para_ref,
+                            extracted_value=upi,
+                            confidence="high",
+                            verification_status="supported",
+                        )
+                    )
+
+            # Phone numbers
+            phones = re.findall(r'(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}|\b\d{10}\b|\+\d{1,3}[\s-]?\d{4,5}[\s-]?\d{4,5}', para)
+            for ph in phones:
+                digits = re.sub(r'\D', '', ph)
+                if "@" not in ph and len(digits) >= 10:
+                    provenance_items.append(
+                        ProvenanceItem(
+                            source_evidence_id=evidence_id,
+                            source_reference=para_ref,
+                            extracted_value=ph,
+                            confidence="high",
+                            verification_status="supported",
+                        )
+                    )
+
+            # URLs
+            urls = re.findall(r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)', para)
+            for u in urls:
+                provenance_items.append(
+                    ProvenanceItem(
+                        source_evidence_id=evidence_id,
+                        source_reference=para_ref,
+                        extracted_value=u,
+                        confidence="high",
+                        verification_status="supported",
+                    )
+                )
+
             # Reference / UTR
             utr_matches = re.findall(r"(?:UPI Ref(?:erence)?|Ref\s*No\.?|Txn\s*ID)[:\s]*([A-Z0-9]{8,22})", para, re.IGNORECASE)
             for utr in utr_matches:

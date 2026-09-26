@@ -135,6 +135,12 @@ export function ScamIntelligenceView({
       if (res.ok) {
         const data: CaseEvidenceItem[] = await res.json();
         setCaseEvidenceList(data);
+        const validEv = data.find((e) => e.raw_content && e.raw_content.trim().length > 0);
+        if (validEv) {
+          setSourceType("evidence");
+          setSelectedEvidenceId(validEv.id);
+          setConversationText(validEv.raw_content || "");
+        }
       }
     } catch (e) {
       console.error("Failed to load case evidence:", e);
@@ -313,16 +319,6 @@ export function ScamIntelligenceView({
             <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
               <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs">
                 <button
-                  onClick={() => setSourceType("preset")}
-                  className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
-                    sourceType === "preset"
-                      ? "bg-cyan-950 text-cyan-300 border border-cyan-800/80"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  Synthetic Scenarios
-                </button>
-                <button
                   onClick={() => setSourceType("evidence")}
                   className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
                     sourceType === "evidence"
@@ -342,13 +338,23 @@ export function ScamIntelligenceView({
                 >
                   Custom Transcript
                 </button>
+                <button
+                  onClick={() => setSourceType("preset")}
+                  className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+                    sourceType === "preset"
+                      ? "bg-cyan-950 text-cyan-300 border border-cyan-800/80"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  ⚡ Synthetic Demo (Testing)
+                </button>
               </div>
 
               <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/60">
                 {sourceType === "preset"
                   ? "Synthetic Demo"
                   : sourceType === "evidence"
-                  ? "Evidence Vault"
+                  ? "Real Case Evidence"
                   : "User Supplied"}
               </span>
             </div>

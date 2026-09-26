@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   PhoneCall,
   User,
@@ -15,6 +15,8 @@ import {
   DollarSign,
   Flag,
   FileText,
+  Mic,
+  MicOff,
 } from "lucide-react";
 
 export interface ExtractedIndicatorItem {
@@ -96,12 +98,100 @@ export const LiveCallLogView: React.FC<Props> = ({
   const [isPromoting, setIsPromoting] = useState<boolean>(false);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
 
+  // Real microphone speech recognition state
+  const [isMicListening, setIsMicListening] = useState<boolean>(false);
+  const [micInterim, setMicInterim] = useState<string>("");
+  const recognitionRef = useRef<any>(null);
+
   // New message form state
   const [newMessage, setNewMessage] = useState<string>("");
   const [newSpeaker, setNewSpeaker] = useState<string>("caller");
   const [notification, setNotification] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  // Cleanup speech recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const startMicListening = async () => {
+    setErrorMsg(null);
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setErrorMsg("Web Speech API is not supported in this browser. Please use Chrome/Edge or manual entry.");
+      return;
+    }
+
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-IN";
+
+      recognition.onstart = () => {
+        setIsMicListening(true);
+        setNotification("🎙️ Live microphone connected. Transcribing speech dynamically...");
+      };
+
+      recognition.onresult = (event: any) => {
+        let interimStr = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const res = event.results[i];
+          const transcriptText = res[0].transcript;
+          if (res.isFinal) {
+            if (transcriptText.trim()) {
+              handleSendMessage(newSpeaker, transcriptText.trim());
+            }
+          } else {
+            interimStr += transcriptText;
+          }
+        }
+        setMicInterim(interimStr);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn("Live Call Speech recognition error:", event.error);
+        if (event.error === "not-allowed" || event.error === "permission-denied") {
+          setErrorMsg("Microphone permission denied by browser. Please allow microphone access or use synthetic test mode.");
+        } else if (event.error !== "no-speech") {
+          setErrorMsg(`Microphone notice: ${event.error}`);
+        }
+        setIsMicListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsMicListening(false);
+        setMicInterim("");
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err: any) {
+      console.error("Mic access error:", err);
+      setErrorMsg("Microphone permission denied or audio device unavailable. Synthetic test mode remains accessible.");
+      setIsMicListening(false);
+    }
+  };
+
+  const stopMicListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsMicListening(false);
+    setMicInterim("");
+  };
 
   const fetchSessions = useCallback(async () => {
     if (!caseId) return;
@@ -289,12 +379,25 @@ export const LiveCallLogView: React.FC<Props> = ({
             </button>
           )}
           <button
+            onClick={isMicListening ? stopMicListening : startMicListening}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow ${
+              isMicListening
+                ? "bg-rose-600 hover:bg-rose-500 text-white animate-pulse shadow-rose-950/50"
+                : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50"
+            }`}
+            title="Start real microphone audio stream and speech recognition"
+          >
+            {isMicListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+            {isMicListening ? "Stop Microphone" : "Start Live Mic"}
+          </button>
+          <button
             onClick={handleRunSyntheticDemo}
             disabled={isSimulating}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow shadow-cyan-950/50 disabled:opacity-50"
+            className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow disabled:opacity-50"
+            title="Run predefined synthetic scenario for offline/hackathon testing"
           >
             <Play className={`w-3.5 h-3.5 ${isSimulating ? "animate-spin" : ""}`} />
-            {isSimulating ? "Streaming Demo..." : `Simulate Scam Call (${sessions.length})`}
+            {isSimulating ? "Simulating Test..." : `⚡ Synthetic Demo (${sessions.length})`}
           </button>
         </div>
       </div>
@@ -375,6 +478,18 @@ export const LiveCallLogView: React.FC<Props> = ({
                     </div>
                   );
                 })
+              )}
+
+              {isMicListening && (
+                <div className="p-3 rounded-2xl border border-cyan-500/40 bg-cyan-950/30 text-cyan-200 text-xs space-y-1 animate-pulse">
+                  <div className="flex items-center gap-2 font-mono text-[11px] text-cyan-300">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                    <span className="font-bold">Listening on Microphone... (Speak now)</span>
+                  </div>
+                  <p className="text-xs italic text-cyan-100 font-sans">
+                    {micInterim || "Awaiting voice input..."}
+                  </p>
+                </div>
               )}
             </div>
 

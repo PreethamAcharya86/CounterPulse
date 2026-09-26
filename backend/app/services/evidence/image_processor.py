@@ -157,25 +157,41 @@ class ImageProcessor(EvidenceProcessor):
                         )
                     )
                 # UPI handles
-                upi_match = re.search(r"[\w.-]+@(?:ok[a-z]+|okhdfcbank|oksbi|paytm|ybl|ibl|axl|apl)", text, re.IGNORECASE)
+                upi_match = re.search(r"\b[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}\b", text)
                 if upi_match:
-                    provenance_items.append(
-                        ProvenanceItem(
-                            source_evidence_id=evidence_id,
-                            source_reference=f"Screenshot OCR {box_summary}",
-                            extracted_value=upi_match.group(0),
-                            confidence=conf_level,
-                            verification_status="supported",
+                    upi_val = upi_match.group(0).strip()
+                    if not upi_val.endswith((".com", ".org", ".net", ".edu", ".gov")) or upi_val.lower().endswith(("@upi", "@okhdfcbank", "@oksbi", "@paytm", "@icici")):
+                        provenance_items.append(
+                            ProvenanceItem(
+                                source_evidence_id=evidence_id,
+                                source_reference=f"Screenshot OCR {box_summary}",
+                                extracted_value=upi_val,
+                                confidence=conf_level,
+                                verification_status="supported",
+                            )
                         )
-                    )
                 # Phone numbers
-                phone_match = re.search(r"(?:\+91[\-\s]?)?[6-9]\d{9}\b", text)
+                phone_match = re.search(r"(?:\+?91[\-\s]?)?[6-9]\d{4}[\-\s]?\d{5}\b|\b\d{10}\b|\+\d{1,3}[\-\s]?\d{4,5}[\-\s]?\d{4,5}", text)
                 if phone_match:
+                    ph_val = phone_match.group(0).strip()
+                    if "@" not in ph_val and len(re.sub(r'\D', '', ph_val)) >= 10:
+                        provenance_items.append(
+                            ProvenanceItem(
+                                source_evidence_id=evidence_id,
+                                source_reference=f"Screenshot OCR {box_summary}",
+                                extracted_value=ph_val,
+                                confidence=conf_level,
+                                verification_status="supported",
+                            )
+                        )
+                # URLs
+                url_match = re.search(r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)', text)
+                if url_match:
                     provenance_items.append(
                         ProvenanceItem(
                             source_evidence_id=evidence_id,
                             source_reference=f"Screenshot OCR {box_summary}",
-                            extracted_value=phone_match.group(0),
+                            extracted_value=url_match.group(0).strip(),
                             confidence=conf_level,
                             verification_status="supported",
                         )

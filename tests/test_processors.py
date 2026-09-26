@@ -154,3 +154,106 @@ async def test_live_whatsapp_processor_authorization():
     assert norm.processing_status == "processed"
     assert norm.metadata["user_authorized"] is True
     assert "Suspect +919876543210" in norm.content["text"]
+
+
+@pytest.mark.asyncio
+async def test_dynamic_ab_whatsapp_extraction_differing_indicators():
+    """
+    CRITICAL REAL-DATA TEST:
+    Prove that ChatProcessor dynamically processes arbitrary WhatsApp conversations
+    with zero hardcoding.
+    Conversation A and Conversation B contain completely disjoint indicators.
+    Asserts that A extracts only A's data, B extracts only B's data, and sets are mutually exclusive.
+    """
+    conv_a = (
+        "[12/03/2026, 14:30] Officer Sharma: Hello, I am from the CBI and Cyber Police.\n"
+        "[12/03/2026, 14:31] Officer Sharma: Your account is under investigation for money laundering. Transfer INR 25000 to fraudteam@upi.\n"
+        "[12/03/2026, 14:32] Officer Sharma: Call our desk at +91 9000011111 or visit https://example-a.test/clearance"
+    )
+
+    conv_b = (
+        "[15/04/2026, 19:15] Power Desk: URGENT NOTICE from BESCOM Electricity Board.\n"
+        "[15/04/2026, 19:16] Power Desk: Your electricity connection will be disconnected tonight. Pay INR 7800 to powerhelp@upi.\n"
+        "[15/04/2026, 19:17] Power Desk: Call lineman desk at +91 9888877777 immediately. Visit https://example-b.test/pay"
+    )
+
+    processor = ChatProcessor()
+    ev_a = DummyEvidence(ev_id="EV-ARBITRARY-A", filename="chat_a.txt", raw_content=conv_a)
+    ev_b = DummyEvidence(ev_id="EV-ARBITRARY-B", filename="chat_b.txt", raw_content=conv_b)
+
+    norm_a = await processor.process(ev_a)
+    norm_b = await processor.process(ev_b)
+
+    assert norm_a.processing_status == "processed"
+    assert norm_b.processing_status == "processed"
+
+    vals_a = {p.extracted_value for p in norm_a.provenance}
+    vals_b = {p.extracted_value for p in norm_b.provenance}
+
+    # 1. Verify A contains A's unique indicators
+    assert any("25000" in v for v in vals_a), f"Expected 25000 in A, got {vals_a}"
+    assert "fraudteam@upi" in vals_a
+    assert any("9000011111" in v for v in vals_a)
+    assert "https://example-a.test/clearance" in vals_a
+    assert any("CBI" in v for v in vals_a)
+
+    # 2. Verify B contains B's unique indicators
+    assert any("7800" in v for v in vals_b), f"Expected 7800 in B, got {vals_b}"
+    assert "powerhelp@upi" in vals_b
+    assert any("9888877777" in v for v in vals_b)
+    assert "https://example-b.test/pay" in vals_b
+    assert any("BESCOM" in v for v in vals_b)
+
+    # 3. Assert mutual exclusivity: A contains NONE of B's indicators, B contains NONE of A's
+    assert "powerhelp@upi" not in vals_a
+    assert not any("7800" in v for v in vals_a)
+    assert not any("9888877777" in v for v in vals_a)
+    assert "https://example-b.test/pay" not in vals_a
+    assert not any("BESCOM" in v for v in vals_a)
+
+    assert "fraudteam@upi" not in vals_b
+    assert not any("25000" in v for v in vals_b)
+    assert not any("9000011111" in v for v in vals_b)
+    assert "https://example-a.test/clearance" not in vals_b
+    assert not any("CBI" in v for v in vals_b)
+
+    # 4. Verify message index provenance
+    prov_a_refs = [p.source_reference for p in norm_a.provenance]
+    assert any("Message 2" in ref for ref in prov_a_refs)
+    assert any("Message 3" in ref for ref in prov_a_refs)
+
+
+@pytest.mark.asyncio
+async def test_chat_processor_unicode_marks_and_varied_formats():
+    """Test ChatProcessor cleans invisible Unicode marks and handles diverse timestamp formats."""
+    # WhatsApp export with hidden \u200e LRM and \u202f narrow NBSP
+    messy_chat = (
+        "\u200e[25/09/2026, 10:31:00\u202fAM] \u200eInspector Rao: Transfer ₹50,000 to nodal.desk@sbi\n"
+        "25/09/2026, 10:32 - Suspect Helpline: Call us at +91 9123456780\n"
+        "Just a plain text line without header continuation"
+    )
+    processor = ChatProcessor()
+    ev = DummyEvidence(ev_id="EV-UNICODE", raw_content=messy_chat)
+
+    norm = await processor.process(ev)
+    assert norm.processing_status == "processed"
+    assert norm.content["message_count"] == 2
+    assert norm.content["messages"][0]["sender"] == "Inspector Rao"
+    assert "plain text line without header continuation" in norm.content["messages"][1]["text"]
+
+    vals = {p.extracted_value for p in norm.provenance}
+    assert any("50,000" in v for v in vals)
+    assert "nodal.desk@sbi" in vals
+    assert any("9123456780" in v for v in vals)
+
+
+@pytest.mark.asyncio
+async def test_chat_processor_empty_content_handling():
+    """Verify empty chat content returns proper failure without crashing."""
+    processor = ChatProcessor()
+    ev = DummyEvidence(ev_id="EV-EMPTY", raw_content="   \n\n\t  ")
+
+    norm = await processor.process(ev)
+    assert norm.processing_status == "failed"
+    assert "empty" in norm.error_message.lower()
+

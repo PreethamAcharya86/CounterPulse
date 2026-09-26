@@ -1,3 +1,4 @@
+import re
 import logging
 from typing import TypeVar, Type, Optional, Dict, Any, Callable
 from pydantic import BaseModel
@@ -15,11 +16,24 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
+PHONE_REGEX = re.compile(
+    r'(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}|\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b|\b\d{10}\b'
+)
+UPI_REGEX = re.compile(
+    r'\b[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}\b'
+)
+URL_REGEX = re.compile(
+    r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)'
+)
+EMAIL_REGEX = re.compile(
+    r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
+)
+
 class MockProvider(AIProvider):
     """
     Deterministic Mock AI Provider for robust automated testing without API keys.
-    Supports simulated failures, quota exhaustion, malformed output testing,
-    and custom response registration per schema.
+    Dynamically extracts actual indicators (phones, UPIs, URLs, amounts) from prompt text
+    without returning hardcoded dummy artifacts.
     """
 
     def __init__(
@@ -90,126 +104,288 @@ class MockProvider(AIProvider):
                     return v
                 return schema.model_validate(v)
 
-        # 5. Deterministic fallback generators based on target schema name
+        # 5. Deterministic dynamic generators based on target schema name and prompt text
         return self._generate_default_for_schema(prompt, schema)
+
+    def _extract_dynamic_entities(self, prompt: str) -> Dict[str, Any]:
+        # Extract amounts (e.g. INR 95,000 or 95,000 INR or ₹95,000 or 95000 rupees)
+        amt_match = re.search(
+            r'(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)|([\d,]+(?:\.\d{1,2})?)\s*(?:INR|Rs\.?|₹|rupees|loss|transfer)\b',
+            prompt,
+            re.IGNORECASE,
+        )
+        amount = 0.0
+        if amt_match:
+            try:
+                amt_str = amt_match.group(1) or amt_match.group(2)
+                amount = float(amt_str.replace(",", ""))
+            except (ValueError, AttributeError):
+                amount = 0.0
+
+        # Extract real phone numbers
+        phones = []
+        for m in PHONE_REGEX.finditer(prompt):
+            val = m.group(0).strip()
+            digits = re.sub(r'\D', '', val)
+            if "@" not in val and len(digits) >= 10:
+                phones.append(val)
+
+        # Extract real UPI IDs
+        upis = []
+        for m in UPI_REGEX.finditer(prompt):
+            val = m.group(0).strip()
+            if not val.endswith((".com", ".org", ".net", ".edu", ".gov")):
+                upis.append(val)
+
+        # Extract real URLs
+        urls = []
+        for m in URL_REGEX.finditer(prompt):
+            urls.append(m.group(0).strip())
+
+        # Extract real Emails
+        emails = []
+        for m in EMAIL_REGEX.finditer(prompt):
+            emails.append(m.group(0).strip())
+
+        # Category and modus operandi detection
+        plow = prompt.lower()
+        if any(w in plow for w in ["arrest", "warrant", "cbi", "crime branch", "customs", "narcotics", "mdma", "police", "dcp", "cyber cell"]):
+            scam_cat = "Digital Arrest / Law Enforcement Impersonation"
+            impersonated = ["Crime Branch / Cyber Police", "Central Bureau of Investigation"]
+            modus = "Attacker impersonated law enforcement alleging contraband seized in customs, demanding security deposit under threat of arrest."
+        elif any(w in plow for w in ["power", "electricity", "bescom", "light bill", "disconnection"]):
+            scam_cat = "Electricity Disconnection & Phishing Extortion"
+            impersonated = ["State Electricity Board / Utility Provider"]
+            modus = "Attacker threatened immediate grid power disconnection for alleged unpaid bills, coercing rapid online payment."
+        elif any(w in plow for w in ["part-time task", "rating task", "telegram task", "earn daily", "review scam"]):
+            scam_cat = "Part-Time Task & Investment Fraud"
+            impersonated = ["Global Marketing Agency / Merchant Escrow"]
+            modus = "Attacker offered deceptive daily returns for rating tasks, subsequently demanding progressive deposits into mule accounts."
+        elif any(w in plow for w in ["lottery", "prize", "won"]):
+            scam_cat = "Lottery & Advance-Fee Fraud"
+            impersonated = ["Promotional Desk / Claims Department"]
+            modus = "Attacker claimed large prize winnings and demanded advance administrative fees."
+        else:
+            scam_cat = "Cyber-Fraud & Social Engineering Scheme"
+            impersonated = ["Unidentified Fraudulent Entity"]
+            modus = "Attacker leveraged coercive pretexts to pressure the victim into transferring funds or sharing credentials."
+
+        return {
+            "amount": amount,
+            "phones": list(dict.fromkeys(phones)),
+            "upis": list(dict.fromkeys(upis)),
+            "urls": list(dict.fromkeys(urls)),
+            "emails": list(dict.fromkeys(emails)),
+            "scam_category": scam_cat,
+            "impersonated_entities": impersonated,
+            "modus_operandi": modus,
+            "has_remote_tool": bool(re.search(r'\b(anydesk|teamviewer|quicksupport|rustdesk|\.apk)\b', plow)),
+        }
 
     def _generate_default_for_schema(self, prompt: str, schema: Type[T]) -> T:
         schema_name = schema.__name__
+        entities = self._extract_dynamic_entities(prompt)
+        amount = entities["amount"]
 
-        # Extract amounts or keywords from prompt if present
-        is_digital_arrest = "arrest" in prompt.lower() or "warrant" in prompt.lower() or "cbi" in prompt.lower()
-        amount = 95000.0 if "95,000" in prompt or "95000" in prompt else 85000.0
+        # Build dynamic indicator objects from actual prompt contents
+        dynamic_indicators = []
+        for u in entities["upis"]:
+            dynamic_indicators.append({
+                "indicator_type": "upi_id",
+                "value": u,
+                "confidence": "high",
+                "verification_status": "supported",
+                "source_evidence_id": "EV-001",
+                "source_reference": "Extracted from evidence text",
+            })
+        for p in entities["phones"]:
+            dynamic_indicators.append({
+                "indicator_type": "phone_number",
+                "value": p,
+                "confidence": "high",
+                "verification_status": "supported",
+                "source_evidence_id": "EV-001",
+                "source_reference": "Suspect caller/sender contact",
+            })
+        for url in entities["urls"]:
+            dynamic_indicators.append({
+                "indicator_type": "url",
+                "value": url,
+                "confidence": "high",
+                "verification_status": "supported",
+                "source_evidence_id": "EV-001",
+                "source_reference": "Phishing or clearance URL link",
+            })
+        for em in entities["emails"]:
+            dynamic_indicators.append({
+                "indicator_type": "email",
+                "value": em,
+                "confidence": "high",
+                "verification_status": "supported",
+                "source_evidence_id": "EV-001",
+                "source_reference": "Suspect email address",
+            })
+
+        # Baseline indicator if prompt has no explicit phone/UPI/URL
+        if not dynamic_indicators:
+            dynamic_indicators.append({
+                "indicator_type": "upi_id",
+                "value": "suspect@upi",
+                "confidence": "medium",
+                "verification_status": "unverified",
+                "source_evidence_id": "EV-001",
+                "source_reference": "Extracted from dialogue",
+            })
 
         if schema_name == "IncidentReconstructionOutput":
+            compromise_list = []
+            if amount > 0:
+                compromise_list.append({
+                    "category": "financial_information",
+                    "status": "CONFIRMED",
+                    "details": f"Unauthorized debit/demand of INR {amount:,.2f}",
+                    "recommended_action": "Request immediate freeze via 1930 / bank fraud cell.",
+                    "source_evidence_id": "EV-001",
+                })
+            if entities["has_remote_tool"]:
+                compromise_list.append({
+                    "category": "remote_access",
+                    "status": "REQUESTED",
+                    "details": "Attacker instructed installation of remote access tool or suspicious APK.",
+                    "recommended_action": "Disconnect device from internet and uninstall application immediately.",
+                    "source_evidence_id": "EV-001",
+                })
+            if not compromise_list:
+                compromise_list.append({
+                    "category": "credentials",
+                    "status": "REQUESTED",
+                    "details": "Social engineering attempt detected; verify account access.",
+                    "recommended_action": "Audit account activity and change passwords.",
+                    "source_evidence_id": "EV-001",
+                })
+
             data = {
-                "summary": "Victim was targeted in an impersonation scheme threatening arrest and coerced into transferring funds.",
-                "incident_type": "Financial Fraud & Law Enforcement Impersonation",
-                "scam_category": "Digital Arrest / Law Enforcement Impersonation" if is_digital_arrest else "UPI Extortion Fraud",
-                "severity_level": "critical",
+                "summary": f"Victim was targeted in a {entities['scam_category']} scheme. {entities['modus_operandi']}",
+                "incident_type": "Financial Fraud & Deceptive Extortion",
+                "scam_category": entities["scam_category"],
+                "severity_level": "critical" if amount > 50000 else "high" if amount > 0 else "medium",
                 "financial_loss": amount,
                 "currency": "INR",
-                "modus_operandi": "Attacker impersonated investigative authorities via WhatsApp, presented forged warrants, and demanded urgent deposit via UPI under threat of physical arrest.",
+                "modus_operandi": entities["modus_operandi"],
                 "timeline": [
-                    {"timestamp_str": "Initial Contact", "event_description": "Suspect initiated contact claiming Aadhaar was compromised in illegal activities.", "source_evidence_id": "EV-001"},
-                    {"timestamp_str": "Coercion & Demand", "event_description": "Suspect demanded security deposit of funds to reserve clearing account.", "source_evidence_id": "EV-002"}
+                    {
+                        "timestamp_str": "Initial Contact",
+                        "event_description": f"Suspect initiated contact claiming authority or urgent debt notice.",
+                        "source_evidence_id": "EV-001",
+                    },
+                    {
+                        "timestamp_str": "Coercion & Demand",
+                        "event_description": f"Suspect demanded payment of INR {amount:,.2f}." if amount > 0 else "Suspect exerted pressure for compliance.",
+                        "source_evidence_id": "EV-001",
+                    }
                 ],
-                "indicators": [
-                    {"indicator_type": "upi_id", "value": "clearing95@okhdfcbank", "confidence": "high", "verification_status": "supported", "source_evidence_id": "EV-001", "source_reference": "Extracted from message"},
-                    {"indicator_type": "phone_number", "value": "+919876543210", "confidence": "high", "verification_status": "supported", "source_evidence_id": "EV-001", "source_reference": "Suspect caller"}
-                ],
-                "compromise": [
-                    {"category": "financial_information", "status": "CONFIRMED", "details": f"Unauthorized debit of INR {amount:,.2f}", "recommended_action": "Request immediate freeze via 1930 / bank fraud cell.", "source_evidence_id": "EV-001"},
-                    {"category": "remote_access", "status": "REQUESTED", "details": "Attacker instructed installation of AnyDesk.", "recommended_action": "Disconnect device from internet and uninstall AnyDesk immediately.", "source_evidence_id": "EV-002"}
-                ],
+                "indicators": dynamic_indicators,
+                "compromise": compromise_list,
                 "recommended_immediate_actions": [
-                    "Call 1930 Cyber Crime Helpline immediately to report the beneficiary UPI handle.",
-                    "Notify bank to initiate transaction dispute and chargeback.",
-                    "Disconnect any remote-access software sessions."
+                    "Call 1930 Cyber Crime Helpline immediately to report the transaction." if amount > 0 else "File alert on national cybercrime portal 1930.",
+                    "Notify bank to initiate transaction dispute and chargeback." if amount > 0 else "Contact bank customer care to report suspicious beneficiary.",
+                    "Preserve all chat transcripts and call records for investigation.",
                 ]
             }
             return schema.model_validate(data)
 
         elif schema_name == "TriageOutput":
             data = {
-                "severity_level": "critical",
-                "urgency_rating": "immediate_containment",
-                "financial_loss_detected": True,
+                "severity_level": "critical" if amount > 50000 else "high" if amount > 0 else "medium",
+                "urgency_rating": "immediate_containment" if amount > 0 else "standard_investigation",
+                "financial_loss_detected": (amount > 0),
                 "loss_amount": amount,
                 "currency": "INR",
-                "authority_impersonation": is_digital_arrest,
-                "remote_access_risk": True,
+                "authority_impersonation": bool(entities["impersonated_entities"]),
+                "remote_access_risk": entities["has_remote_tool"],
                 "credential_risk": False,
                 "identity_exposure": True,
-                "triage_summary": "High-urgency financial fraud with active extortion and remote access pressure.",
+                "triage_summary": f"Incident triaged as {entities['scam_category']}. Coercive demands detected.",
                 "immediate_containment_steps": [
                     "Call national helpline 1930 within the golden hour.",
-                    "Freeze bank account or dispute UPI transaction.",
-                    "Audit device for unauthorized remote management apps."
+                    "Freeze bank account or dispute UPI transaction." if amount > 0 else "Block suspect number and preserve evidence.",
+                    "Audit device for unauthorized remote management apps." if entities["has_remote_tool"] else "Do not click unverified links.",
                 ]
             }
             return schema.model_validate(data)
 
         elif schema_name == "ScamIntelligenceOutput":
+            scam_ind_items = []
+            for ind in dynamic_indicators:
+                scam_ind_items.append({
+                    "indicator": ind["value"],
+                    "type": ind["indicator_type"],
+                    "context": ind["source_reference"],
+                })
+
             data = {
-                "scam_type": "Digital Arrest / Law Enforcement Impersonation" if is_digital_arrest else "Financial Coercion",
-                "impersonated_entities": ["Supreme Court of India", "CBI / Cyber Cell"] if is_digital_arrest else ["Bank Fraud Desk"],
-                "tactics_observed": ["Urgency Pressure", "Legal Intimidation", "Remote Access Request", "Confidential Clearance Pretext"],
-                "psychological_triggers": ["Fear of immediate arrest", "False authority", "Time limit countdown"],
-                "suspicious_indicators_found": [
-                    {"indicator": "clearing95@okhdfcbank", "type": "upi_id", "context": "Demand beneficiary handle"},
-                    {"indicator": "+919876543210", "type": "phone_number", "context": "Impersonator phone"}
-                ],
-                "threat_assessment": "Coercive digital extortion using fabricated legal authority."
+                "scam_type": entities["scam_category"],
+                "impersonated_entities": entities["impersonated_entities"],
+                "tactics_observed": ["Urgency Pressure", "Deceptive Claims", "Payment Redirection"],
+                "psychological_triggers": ["Fear of loss or penalty", "Authority deference", "Urgency countdown"],
+                "suspicious_indicators_found": scam_ind_items,
+                "threat_assessment": f"Active {entities['scam_category']} operation targeting victim."
             }
             return schema.model_validate(data)
 
         elif schema_name == "CompromiseAssessmentOutput":
+            assessments = [
+                {
+                    "category": "credentials",
+                    "status": "REQUESTED",
+                    "details": "Attacker attempted social engineering extortion or credential harvesting.",
+                    "recommended_action": "Do not share OTPs; change online banking password as precaution.",
+                    "source_evidence_id": "EV-001",
+                },
+                {
+                    "category": "remote_access",
+                    "status": "REQUESTED" if entities["has_remote_tool"] else "NOT_REQUESTED",
+                    "details": "Attacker instructed installation of remote control application or APK." if entities["has_remote_tool"] else "No remote access requested.",
+                    "recommended_action": "Ensure no remote management tools are running on device.",
+                    "source_evidence_id": "EV-001",
+                },
+                {
+                    "category": "financial_information",
+                    "status": "CONFIRMED" if amount > 0 else "NOT_COMPROMISED",
+                    "details": f"Demanded or transferred financial amount of INR {amount:,.2f}." if amount > 0 else "No direct financial transfer confirmed.",
+                    "recommended_action": "Dispute transaction with bank immediately." if amount > 0 else "Monitor bank statements.",
+                    "source_evidence_id": "EV-001",
+                },
+                {
+                    "category": "identity_information",
+                    "status": "DISCLOSED",
+                    "details": "Victim verified personal identifiers or Aadhaar details during interaction.",
+                    "recommended_action": "Lock Aadhaar biometrics via UIDAI portal if disclosed.",
+                    "source_evidence_id": "EV-001",
+                },
+            ]
+
             data = {
-                "assessments": [
-                    {
-                        "category": "credentials",
-                        "status": "REQUESTED",
-                        "details": "Attacker requested account credentials and OTP but victim did not disclose.",
-                        "recommended_action": "Do not share OTPs; change online banking password as precaution.",
-                        "source_evidence_id": "EV-001"
-                    },
-                    {
-                        "category": "remote_access",
-                        "status": "REQUESTED",
-                        "details": "Attacker requested victim to install AnyDesk.",
-                        "recommended_action": "Ensure no remote management tools are running on device.",
-                        "source_evidence_id": "EV-001"
-                    },
-                    {
-                        "category": "financial_information",
-                        "status": "CONFIRMED",
-                        "details": f"Confirmed financial transfer of INR {amount:,.2f} occurred.",
-                        "recommended_action": "Dispute transaction with bank immediately.",
-                        "source_evidence_id": "EV-001"
-                    },
-                    {
-                        "category": "identity_information",
-                        "status": "DISCLOSED",
-                        "details": "Victim verified Aadhaar number during call.",
-                        "recommended_action": "Lock Aadhaar biometrics via UIDAI portal.",
-                        "source_evidence_id": "EV-001"
-                    }
-                ],
-                "overall_device_compromise": False,
-                "summary": "Financial transfer confirmed; credentials requested but not confirmed compromised."
+                "assessments": assessments,
+                "overall_device_compromise": entities["has_remote_tool"],
+                "summary": f"Assessment for {entities['scam_category']}: financial loss {amount:,.2f}."
             }
             return schema.model_validate(data)
 
         elif schema_name == "NetworkIntelligenceOutput":
+            nodes = []
+            for ind in dynamic_indicators:
+                nodes.append({
+                    "entity_type": ind["indicator_type"],
+                    "value": ind["value"],
+                    "threat_score": 0.90,
+                    "notes": "Extracted from dialogue transcript",
+                })
+
             data = {
-                "nodes": [
-                    {"entity_type": "upi_id", "value": "clearing95@okhdfcbank", "threat_score": 0.95, "notes": "Extortion payee handle"},
-                    {"entity_type": "phone_number", "value": "+919876543210", "threat_score": 0.85, "notes": "Calling party"},
-                    {"entity_type": "url", "value": "https://trai-verification-portal.xyz/kyc", "threat_score": 0.90, "notes": "Phishing portal"}
-                ],
+                "nodes": nodes,
                 "correlations": [
-                    "Phone number matches pattern of VOIP forwarded scam calls.",
-                    "Domain registrar registered within past 7 days."
+                    "Identified indicators correlated with known fraud patterns.",
                 ],
                 "disclaimer": "Indicators represent suspicious investigative artifacts; does not establish criminality of named individuals."
             }
@@ -217,39 +393,37 @@ class MockProvider(AIProvider):
 
         elif schema_name == "EvidenceIntelligenceOutput":
             data = {
-                "extracted_indicators": [
-                    {"indicator_type": "upi_id", "value": "clearing95@okhdfcbank", "confidence": "high", "verification_status": "supported", "source_evidence_id": "EV-001", "source_reference": "Chat Message"},
-                    {"indicator_type": "phone_number", "value": "+919876543210", "confidence": "high", "verification_status": "supported", "source_evidence_id": "EV-001", "source_reference": "Call log"}
-                ],
+                "extracted_indicators": dynamic_indicators,
                 "extracted_financials": [
-                    {"amount": amount, "currency": "INR", "description": "Demanded security deposit", "source_evidence_id": "EV-001"}
-                ],
-                "dates_mentioned": ["26/09/2026", "25/09/2026"],
-                "entities_mentioned": ["Supreme Court of India", "CBI", "DCP Rajesh Sharma"]
+                    {"amount": amount, "currency": "INR", "description": "Demanded amount", "source_evidence_id": "EV-001"}
+                ] if amount > 0 else [],
+                "dates_mentioned": ["26/09/2026"],
+                "entities_mentioned": entities["impersonated_entities"],
             }
             return schema.model_validate(data)
 
         elif schema_name == "ResponsePackagesOutput":
+            identifiers_str = ", ".join([ind["value"] for ind in dynamic_indicators]) or "Under Investigation"
             data = {
                 "bank_dispute_subject": f"URGENT: Dispute of Unauthorized Fraudulent Transaction - INR {amount:,.2f}",
                 "bank_dispute_body": (
                     f"To The Branch Manager / Fraud Cell,\n\n"
                     f"Subject: Dispute of Unauthorized Fraudulent Transaction\n\n"
-                    f"I am reporting an unauthorized fraudulent debit of INR {amount:,.2f} originating on my account. "
-                    f"I was subjected to deceptive coercion and extortion by imposters posing as legal authorities. "
+                    f"I am reporting an unauthorized fraudulent transaction of INR {amount:,.2f} originating on my account. "
+                    f"I was subjected to deceptive coercion and extortion in a {entities['scam_category']}. "
                     f"In accordance with RBI Circular DBR.No.Leg.BC.78/09.07.005/2017-18 regarding Customer Protection and Limiting Liability in Unauthorized Electronic Banking Transactions, "
                     f"I am notifying you within the statutory notification window. Please freeze the beneficiary handle immediately and initiate chargeback recovery.\n\n"
-                    f"Beneficiary Handle: clearing95@okhdfcbank\n\n"
+                    f"Suspect Identifiers: {identifiers_str}\n\n"
                     f"Sincerely,\nVictim"
                 ),
-                "cybercrime_complaint_subject": f"Cyber Crime Complaint: Digital Arrest & Extortion - Loss INR {amount:,.2f}",
+                "cybercrime_complaint_subject": f"Cyber Crime Complaint: {entities['scam_category']} - Loss INR {amount:,.2f}",
                 "cybercrime_complaint_body": (
                     f"COMPLAINT FOR NATIONAL CYBER CRIME REPORTING PORTAL (1930 / cybercrime.gov.in)\n\n"
-                    f"Incident Category: Impersonation / Digital Arrest Extortion\n"
+                    f"Incident Category: {entities['scam_category']}\n"
                     f"Approximate Financial Loss: INR {amount:,.2f}\n"
-                    f"Suspect Identifiers: clearing95@okhdfcbank, +919876543210\n\n"
+                    f"Suspect Identifiers: {identifiers_str}\n\n"
                     f"Brief Narrative:\n"
-                    f"The complainant received intimidating messages and calls falsely claiming an arrest warrant from the Supreme Court / CBI. "
+                    f"The complainant received intimidating messages and calls regarding {entities['scam_category']}. "
                     f"The caller coerced the complainant into transferring INR {amount:,.2f} under duress. "
                     f"All evidence artifacts including screenshots and transaction IDs have been preserved."
                 ),
@@ -268,7 +442,7 @@ class MockProvider(AIProvider):
                     "Official bank account statement showing debit timestamp"
                 ],
                 "unanswered_questions": [
-                    "Was AnyDesk actually installed or did the connection fail?",
+                    "Was remote access software actually installed or did the connection fail?",
                     "Did the victim share OTP directly via SMS or enter it on a website?"
                 ],
                 "evidence_gaps": [
@@ -281,6 +455,9 @@ class MockProvider(AIProvider):
                 ]
             }
             return schema.model_validate(data)
+
+        # Generic Pydantic fallback: instantiate with dummy schema values
+        return schema.model_construct()
 
         # Generic Pydantic fallback: instantiate with dummy schema values
         return schema.model_construct()

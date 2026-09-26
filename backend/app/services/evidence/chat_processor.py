@@ -11,22 +11,40 @@ from backend.app.services.evidence.base import (
 logger = logging.getLogger(__name__)
 
 # Common WhatsApp and chat line regex patterns
+# Matches timestamps in various regional and OS formats:
+# e.g., "25/09/2026, 10:31 - Sender: Msg", "[25/09/2026, 10:31:00 AM] Sender: Msg", "[10:31] Sender: Msg", "Sender: Msg"
 CHAT_PATTERNS = [
-    # Format: [10:31, 25/09/2026] Sender: Message or [10:31] Sender: Message
-    re.compile(r"^\[(?P<timestamp>\d{1,2}:\d{2}(?::\d{2})?(?:[,\s]+\d{1,2}[/-]\d{1,2}[/-]\d{2,4})?)\]\s*(?P<sender>[^:]+?):\s*(?P<message>.*)$"),
-    
-    # Format: [25/09/2026, 10:31:00 AM] Sender: Message
-    re.compile(r"^\[(?P<timestamp>\d{1,2}[/-]\d{1,2}[/-]\d{2,4}[,\s]+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)\]\s*(?P<sender>[^:]+?):\s*(?P<message>.*)$"),
+    # Format: [25/09/2026, 10:31:00 AM] Sender: Message or [25/09/26, 10:31 AM] Sender: Message
+    re.compile(r"^\[(?P<timestamp>\d{1,4}[/-]\d{1,2}[/-]\d{2,4}[,\s]+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)\]\s*(?P<sender>[^:]+?):\s*(?P<message>.*)$"),
 
-    # Format: 25/09/2026, 10:31 - Sender: Message or 25/09/26, 10:31 AM - Sender: Message
-    re.compile(r"^(?P<timestamp>\d{1,2}[/-]\d{1,2}[/-]\d{2,4}[,\s]+\d{1,2}:\d{2}(?:\s*[APap][Mm])?)\s*-\s*(?P<sender>[^:]+?):\s*(?P<message>.*)$"),
+    # Format: [10:31, 25/09/2026] Sender: Message or [10:31:00] Sender: Message or [10:31] Sender: Message
+    re.compile(r"^\[(?P<timestamp>\d{1,2}:\d{2}(?::\d{2})?(?:[,\s]+\d{1,4}[/-]\d{1,2}[/-]\d{2,4})?(?:\s*[APap][Mm])?)\]\s*(?P<sender>[^:]+?):\s*(?P<message>.*)$"),
 
-    # Format: 10:31 - Sender: Message
-    re.compile(r"^(?P<timestamp>\d{1,2}:\d{2}(?:\s*[APap][Mm])?)\s*-\s*(?P<sender>[^:]+?):\s*(?P<message>.*)$"),
+    # Format: 25/09/2026, 10:31 - Sender: Message or 25/09/26, 10:31 AM - Sender: Message or 25/09/2026, 10:31:00 am - Sender: Message
+    re.compile(r"^(?P<timestamp>\d{1,4}[/-]\d{1,2}[/-]\d{2,4}[,\s]+\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)\s*[-–—]\s*(?P<sender>[^:]+?):\s*(?P<message>.*)$"),
 
-    # Simple fallback: Sender: Message (no timestamp)
-    re.compile(r"^(?P<sender>[A-Za-z0-9\+\s\-_]{2,30}):\s*(?P<message>.*)$")
+    # Format: 10:31 - Sender: Message or 10:31 AM - Sender: Message
+    re.compile(r"^(?P<timestamp>\d{1,2}:\d{2}(?::\d{2})?(?:\s*[APap][Mm])?)\s*[-–—]\s*(?P<sender>[^:]+?):\s*(?P<message>.*)$"),
+
+    # Simple fallback: Sender: Message (no timestamp, e.g. "Suspect: Transfer the funds")
+    re.compile(r"^(?P<sender>[A-Za-z0-9\+\s\-_\.]{2,40}):\s*(?P<message>.*)$")
 ]
+
+# Patterns for extracting forensic indicators dynamically
+PHONE_REGEX = re.compile(r'(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}|\b\d{10}\b|\+\d{1,3}[\s-]?\d{4,5}[\s-]?\d{4,5}')
+UPI_REGEX = re.compile(r'\b[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}\b')
+URL_REGEX = re.compile(r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)')
+EMAIL_REGEX = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b')
+AMOUNT_REGEX = re.compile(r'(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)|(\b[\d,]+(?:\.\d{1,2})?\s*(?:rupees|lakhs?|crores?)\b)', re.IGNORECASE)
+REMOTE_TOOL_REGEX = re.compile(r'\b(AnyDesk|TeamViewer|RustDesk|QuickSupport|AirDroid|\w+\.apk)\b', re.IGNORECASE)
+ORG_REGEX = re.compile(r'\b(RBI|CBI|Cyber\s*Cell|Police|Crime\s*Branch|Customs|ED|Enforcement\s*Directorate|Supreme\s*Court|High\s*Court|Telecom|TRAI|FedEx|DHL|Blue\s*Dart|State\s*Bank|HDFC|ICICI|SBI|Axis|BESCOM|Electricity\s*Board)\b', re.IGNORECASE)
+
+def clean_invisible_unicode(text: str) -> str:
+    """Strip hidden Unicode directional formatting and zero-width characters common in WhatsApp exports."""
+    # \u200e (LRM), \u200f (RLM), \u202a-\u202e (directional embeddings/overrides), \u202f (narrow no-break space), \ufeff (BOM), \u00a0 (NBSP)
+    cleaned = re.sub(r'[\u200b-\u200f\u202a-\u202e\ufeff]', '', text)
+    cleaned = cleaned.replace('\u202f', ' ').replace('\u00a0', ' ')
+    return cleaned
 
 class ChatProcessor(EvidenceProcessor):
     """
@@ -66,7 +84,10 @@ class ChatProcessor(EvidenceProcessor):
                     error_message=f"Could not read chat file: {str(e)}",
                 )
 
-        if not raw_text.strip():
+        # Clean hidden Unicode marks from chat text
+        clean_raw = clean_invisible_unicode(raw_text)
+
+        if not clean_raw.strip():
             return NormalizedEvidence(
                 evidence_id=evidence_id,
                 case_id=case_id,
@@ -82,7 +103,7 @@ class ChatProcessor(EvidenceProcessor):
         segments: List[ContentSegment] = []
         provenance_items: List[ProvenanceItem] = []
         
-        lines = raw_text.splitlines()
+        lines = clean_raw.splitlines()
         current_msg = None
 
         for line_num, line in enumerate(lines):
@@ -147,7 +168,7 @@ class ChatProcessor(EvidenceProcessor):
             norm_block = f"{' | '.join(header_parts)}\nText: {text}"
             normalized_lines.append(norm_block)
 
-            # Build ContentSegment for Scam Intelligence Agent
+            # Build ContentSegment for downstream agents
             seg_ref = f"Message {idx}" + (f" ({ts})" if ts else "") + (f" by {sender}" if sender else "")
             segments.append(
                 ContentSegment(
@@ -160,10 +181,10 @@ class ChatProcessor(EvidenceProcessor):
                 )
             )
 
-            # Extract provenance entities from chat message
-            # 1. Amounts
-            amounts = re.findall(r"(?:₹|Rs\.?|INR)\s*[\d,]+(?:\.\d{2})?", text, re.IGNORECASE)
-            for amt in amounts:
+            # Dynamically extract all forensic provenance entities from this message
+            # 1. Financial Amounts
+            for amt_m in AMOUNT_REGEX.finditer(text):
+                amt = amt_m.group(0).strip()
                 provenance_items.append(
                     ProvenanceItem(
                         source_evidence_id=evidence_id,
@@ -174,28 +195,83 @@ class ChatProcessor(EvidenceProcessor):
                     )
                 )
 
-            # 2. UPI IDs
-            upis = re.findall(r"[\w.-]+@(?:ok[a-z]+|okhdfcbank|oksbi|paytm|ybl|ibl|axl|apl)", text, re.IGNORECASE)
-            for upi in upis:
+            # 2. UPI IDs (handles ending in @bank or @upi, filtering standard non-bank domains)
+            for upi_m in UPI_REGEX.finditer(text):
+                upi = upi_m.group(0).strip()
+                if not upi.endswith((".com", ".org", ".net", ".edu", ".gov")) or upi.lower().endswith(("@upi", "@okhdfcbank", "@oksbi", "@paytm", "@icici")):
+                    provenance_items.append(
+                        ProvenanceItem(
+                            source_evidence_id=evidence_id,
+                            source_reference=seg_ref,
+                            extracted_value=upi,
+                            confidence="high",
+                            verification_status="supported",
+                        )
+                    )
+
+            # 3. Phone numbers
+            for phone_m in PHONE_REGEX.finditer(text):
+                phone = phone_m.group(0).strip()
+                digits = re.sub(r'\D', '', phone)
+                if "@" not in phone and len(digits) >= 10:
+                    provenance_items.append(
+                        ProvenanceItem(
+                            source_evidence_id=evidence_id,
+                            source_reference=seg_ref,
+                            extracted_value=phone,
+                            confidence="high",
+                            verification_status="supported",
+                        )
+                    )
+
+            # 4. URLs & Impersonation Portals
+            for url_m in URL_REGEX.finditer(text):
+                url_val = url_m.group(0).strip()
                 provenance_items.append(
                     ProvenanceItem(
                         source_evidence_id=evidence_id,
                         source_reference=seg_ref,
-                        extracted_value=upi,
+                        extracted_value=url_val,
                         confidence="high",
                         verification_status="supported",
                     )
                 )
 
-            # 3. Remote access tools / APKs mentioned
-            remote_tools = re.findall(r"\b(AnyDesk|TeamViewer|RustDesk|QuickSupport|AirDroid|\w+\.apk)\b", text, re.IGNORECASE)
-            for tool in remote_tools:
+            # 5. Email addresses
+            for email_m in EMAIL_REGEX.finditer(text):
+                email_val = email_m.group(0).strip()
+                provenance_items.append(
+                    ProvenanceItem(
+                        source_evidence_id=evidence_id,
+                        source_reference=seg_ref,
+                        extracted_value=email_val,
+                        confidence="high",
+                        verification_status="supported",
+                    )
+                )
+
+            # 6. Remote access tools / APKs mentioned
+            for tool_m in REMOTE_TOOL_REGEX.finditer(text):
+                tool = tool_m.group(0).strip()
                 provenance_items.append(
                     ProvenanceItem(
                         source_evidence_id=evidence_id,
                         source_reference=seg_ref,
                         extracted_value=f"Remote Tool / APK: {tool}",
                         confidence="high",
+                        verification_status="supported",
+                    )
+                )
+
+            # 7. Claimed Authorities / Impersonated Organizations
+            for org_m in ORG_REGEX.finditer(text):
+                org = org_m.group(0).strip()
+                provenance_items.append(
+                    ProvenanceItem(
+                        source_evidence_id=evidence_id,
+                        source_reference=seg_ref,
+                        extracted_value=f"Claimed Entity: {org}",
+                        confidence="medium",
                         verification_status="supported",
                     )
                 )
@@ -227,3 +303,4 @@ class ChatProcessor(EvidenceProcessor):
             provenance=provenance_items,
             processing_status="processed",
         )
+

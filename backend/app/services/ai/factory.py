@@ -22,6 +22,11 @@ class AIProviderFactory:
         cls._override_provider = provider
 
     @classmethod
+    def get_override_provider(cls) -> Optional[AIProvider]:
+        """Return the current injected override provider, if any."""
+        return cls._override_provider
+
+    @classmethod
     def get_provider(cls, provider_type: Optional[str] = None) -> AIProvider:
         """
         Resolve and instantiate the appropriate AIProvider based on configuration or override.

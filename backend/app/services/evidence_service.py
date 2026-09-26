@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 from typing import Optional, List, Dict, Any, Tuple
@@ -76,16 +77,36 @@ class EvidenceService:
             elif mime_type.startswith("audio/"):
                 ev_type = "audio"
             else:
-                ev_type = "text"
+                # Auto-detect if text file contains WhatsApp or chat log structure
+                text_sample = ""
+                try:
+                    text_sample = file_bytes[:4096].decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+                fn_lower = original_filename.lower()
+                is_chat_name = "chat" in fn_lower or "whatsapp" in fn_lower or fn_lower.endswith(".chat")
+                is_chat_content = bool(re.search(r'(?:^\[?\d{1,4}[/-]\d{1,2}[/-]\d{2,4}[,\s]+\d{1,2}:\d{2}|^\d{1,2}:\d{2}\s*[-–—]|^\[\d{1,2}:\d{2})', text_sample, re.MULTILINE))
+                if is_chat_name or is_chat_content:
+                    ev_type = "chat"
+                else:
+                    ev_type = "text"
 
         # 5. Create DB record first to obtain evidence_id
         safe_orig_name = sanitize_filename(original_filename)
+        raw_content_str = None
+        if ev_type in ("text", "chat"):
+            try:
+                raw_content_str = file_bytes.decode("utf-8", errors="replace")
+            except Exception:
+                pass
+
         evidence = Evidence(
             case_id=case_id,
             evidence_type=ev_type,
             filename=safe_orig_name,
             mime_type=mime_type,
             file_size=file_size,
+            raw_content=raw_content_str,
             sha256_hash=sha256,
             processing_status="uploaded",
         )
@@ -133,13 +154,20 @@ class EvidenceService:
         if not clean_text:
             raise HTTPException(status_code=400, detail="Evidence text cannot be empty.")
 
+        # Auto-detect if raw text matches WhatsApp or chat structure
+        resolved_ev_type = evidence_type
+        if resolved_ev_type == "text":
+            is_chat = bool(re.search(r'(?:^\[?\d{1,4}[/-]\d{1,2}[/-]\d{2,4}[,\s]+\d{1,2}:\d{2}|^\d{1,2}:\d{2}\s*[-–—]|^\[\d{1,2}:\d{2})', clean_text[:4096], re.MULTILINE))
+            if is_chat:
+                resolved_ev_type = "chat"
+
         text_bytes = clean_text.encode("utf-8")
         sha256 = compute_sha256(text_bytes)
 
-        filename = f"{evidence_type}_evidence.txt"
+        filename = f"{resolved_ev_type}_evidence.txt"
         evidence = Evidence(
             case_id=case_id,
-            evidence_type=evidence_type,
+            evidence_type=resolved_ev_type,
             filename=filename,
             mime_type="text/plain",
             file_size=len(text_bytes),
