@@ -33,7 +33,12 @@ interface CaseSummary {
 export function App() {
   const { t } = useTranslation();
   const [cases, setCases] = useState<CaseSummary[]>([]);
-  const [currentCaseId, setCurrentCaseId] = useState<string>("");
+  const [currentCaseId, setCurrentCaseId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("counterpulse_current_case_id") || "";
+    }
+    return "";
+  });
   const [currentCaseTitle, setCurrentCaseTitle] = useState<string>("Active Investigation");
   const [isCreatingCase, setIsCreatingCase] = useState(false);
   const [newCaseTitle, setNewCaseTitle] = useState("");
@@ -60,6 +65,7 @@ export function App() {
       const match = path.match(/\/cases\/([a-zA-Z0-9_-]+)/);
       if (match && match[1]) {
         setCurrentCaseId(match[1]);
+        localStorage.setItem("counterpulse_current_case_id", match[1]);
       }
     };
 
@@ -95,16 +101,22 @@ export function App() {
         const data: CaseSummary[] = await res.json();
         setCases(data);
         if (data.length > 0) {
-          if (!currentCaseId || !data.some((c) => c.id === currentCaseId)) {
+          const stored = localStorage.getItem("counterpulse_current_case_id");
+          const targetId = currentCaseId || stored;
+          const found = targetId ? data.find((c) => c.id === targetId) : null;
+          if (found) {
+            setCurrentCaseId(found.id);
+            setCurrentCaseTitle(found.title);
+            localStorage.setItem("counterpulse_current_case_id", found.id);
+          } else {
             setCurrentCaseId(data[0].id);
             setCurrentCaseTitle(data[0].title);
-          } else {
-            const found = data.find((c) => c.id === currentCaseId);
-            if (found) setCurrentCaseTitle(found.title);
+            localStorage.setItem("counterpulse_current_case_id", data[0].id);
           }
         } else {
           setCurrentCaseId("");
           setCurrentCaseTitle("");
+          localStorage.removeItem("counterpulse_current_case_id");
         }
       }
     } catch (err) {
@@ -117,7 +129,20 @@ export function App() {
     if (sel) {
       setCurrentCaseId(sel.id);
       setCurrentCaseTitle(sel.title);
-      const newPath = activeTab === "passport" ? `/cases/${sel.id}/passport` : `/cases/${sel.id}`;
+      localStorage.setItem("counterpulse_current_case_id", sel.id);
+      const subpath =
+        activeTab === "scam-intel"
+          ? "/scam-intel"
+          : activeTab === "passport"
+          ? "/passport"
+          : activeTab === "reports"
+          ? "/reports"
+          : activeTab === "call-log"
+          ? "/call-log"
+          : activeTab === "voice"
+          ? "/voice"
+          : "";
+      const newPath = `/cases/${sel.id}${subpath}`;
       window.history.pushState(null, "", newPath);
     }
   };
@@ -138,6 +163,7 @@ export function App() {
         setCases((prev) => [created, ...prev]);
         setCurrentCaseId(created.id);
         setCurrentCaseTitle(created.title);
+        localStorage.setItem("counterpulse_current_case_id", created.id);
         setNewCaseTitle("");
         setIsCreatingCase(false);
         const newPath = activeTab === "passport" ? `/cases/${created.id}/passport` : `/cases/${created.id}`;
@@ -414,7 +440,10 @@ export function App() {
         {/* View Content: Evidence vs Case Passport vs Response Reports vs Call Log vs Voice Control vs Scam Intelligence */}
         {currentCaseId ? (
           activeTab === "evidence" ? (
-            <EvidenceUploader caseId={currentCaseId} />
+            <EvidenceUploader
+              caseId={currentCaseId}
+              onNavigateToScamIntel={() => switchTab("scam-intel")}
+            />
           ) : activeTab === "passport" ? (
             <CasePassportView
               caseId={currentCaseId}

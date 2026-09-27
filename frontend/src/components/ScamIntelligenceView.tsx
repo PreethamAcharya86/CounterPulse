@@ -135,11 +135,11 @@ export function ScamIntelligenceView({
       if (res.ok) {
         const data: CaseEvidenceItem[] = await res.json();
         setCaseEvidenceList(data);
-        const validEv = data.find((e) => e.raw_content && e.raw_content.trim().length > 0);
-        if (validEv) {
+        if (data.length > 0) {
           setSourceType("evidence");
-          setSelectedEvidenceId(validEv.id);
-          setConversationText(validEv.raw_content || "");
+          const evToSelect = data.find((e) => e.raw_content && e.raw_content.trim().length > 0) || data[0];
+          setSelectedEvidenceId(evToSelect.id);
+          setConversationText(evToSelect.raw_content || "");
         }
       }
     } catch (e) {
@@ -151,8 +151,43 @@ export function ScamIntelligenceView({
   useEffect(() => {
     fetchCaseEvidence();
     setSelectedMessageIndex(null);
-    setIntelligence(null);
     setError(null);
+
+    const loadPersistedIntel = async () => {
+      try {
+        const intelRes = await fetch(`/api/v1/cases/${caseId}/scam-intelligence`);
+        if (intelRes.ok) {
+          const intelData = await intelRes.json();
+          if (intelData.total_indicators > 0 || (intelData.indicators && intelData.indicators.length > 0)) {
+            setIntelligence({
+              case_id: caseId,
+              conversation_summary: intelData.conversation_summary || `Case contains ${intelData.total_indicators} persisted indicators.`,
+              scam_type: intelData.scam_category || "Under Investigation",
+              threat_assessment: intelData.threat_assessment || "Forensic analysis of evidence in progress.",
+              tactics_observed: intelData.scam_tactics ? intelData.scam_tactics.map((t: any) => t.value) : [],
+              psychological_triggers: [],
+              urgency_level: "high",
+              indicators: intelData.indicators || [],
+              phone_numbers: intelData.phone_numbers || [],
+              upi_ids: intelData.upi_ids || [],
+              urls: intelData.urls || [],
+              emails: intelData.emails || [],
+              claimed_entities: intelData.claimed_entities || [],
+              financial_amounts: intelData.financial_amounts || [],
+              transaction_references: intelData.transaction_references || [],
+              scam_tactics: intelData.scam_tactics || [],
+              requested_actions: intelData.requested_actions || [],
+              disclaimer: intelData.disclaimer || "",
+              added_to_case_count: intelData.total_indicators || 0,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load persisted intelligence:", err);
+      }
+    };
+
+    loadPersistedIntel();
   }, [caseId, fetchCaseEvidence]);
 
   const handleScenarioChange = (scenarioId: string) => {
@@ -203,7 +238,7 @@ export function ScamIntelligenceView({
           conversation_text: textToAnalyze,
           evidence_id: sourceType === "evidence" ? selectedEvidenceId || null : null,
           selected_message_index: focusMessageIndex !== undefined ? focusMessageIndex : selectedMessageIndex,
-          add_to_case: false,
+          add_to_case: true,
         }),
       });
 

@@ -55,6 +55,7 @@ export const VoiceControlView: React.FC<Props> = ({
   const turnsEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const processingTimeoutRef = useRef<any>(null);
 
   // Auto-scroll
   useEffect(() => {
@@ -146,6 +147,10 @@ export const VoiceControlView: React.FC<Props> = ({
 
         ws.onmessage = (event) => {
           try {
+            if (processingTimeoutRef.current) {
+              clearTimeout(processingTimeoutRef.current);
+              processingTimeoutRef.current = null;
+            }
             const data = JSON.parse(event.data);
             if (data.type === "state_change") {
               if (data.voice_state) setVoiceState(data.voice_state);
@@ -195,6 +200,7 @@ export const VoiceControlView: React.FC<Props> = ({
     connectWs();
 
     return () => {
+      if (processingTimeoutRef.current) clearTimeout(processingTimeoutRef.current);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (ws) {
         ws.onclose = null;
@@ -261,6 +267,20 @@ export const VoiceControlView: React.FC<Props> = ({
     setInputText("");
     setTranscript("");
 
+    // Set timeout safeguard to prevent hanging indefinitely
+    if (processingTimeoutRef.current) {
+      clearTimeout(processingTimeoutRef.current);
+    }
+    processingTimeoutRef.current = setTimeout(() => {
+      setVoiceState((cur) => {
+        if (cur === "PROCESSING") {
+          setErrorStatus("Voice command processing timed out. Please try again.");
+          return "ERROR";
+        }
+        return cur;
+      });
+    }, 25000);
+
     // Try WebSocket if connected
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(
@@ -313,6 +333,11 @@ export const VoiceControlView: React.FC<Props> = ({
     } catch (err: any) {
       setErrorStatus(err.message || "Network error sending voice command.");
       setVoiceState("ERROR");
+    } finally {
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+        processingTimeoutRef.current = null;
+      }
     }
   };
 
@@ -336,6 +361,7 @@ export const VoiceControlView: React.FC<Props> = ({
   const QUICK_COMMANDS = [
     "Analyze this case.",
     "What happened?",
+    "What's the UPI ID?",
     "What accounts are compromised?",
     "Show me the evidence.",
     "Read the cybercrime complaint.",
@@ -574,20 +600,21 @@ export const VoiceControlView: React.FC<Props> = ({
             <div className="relative flex-1">
               <input
                 type="text"
+                disabled={voiceState === "PROCESSING"}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter" && !e.shiftKey && voiceState !== "PROCESSING") {
                     e.preventDefault();
                     handleSendCommand(inputText);
                   }
                 }}
-                placeholder="Or type a voice command e.g. 'Analyze this case', 'What happened?', 'Send complaint email'..."
-                className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-purple-500 focus:outline-none pr-10 font-medium"
+                placeholder={voiceState === "PROCESSING" ? "Processing voice command..." : "Or type a voice command e.g. 'Analyze this case', 'What happened?', 'What\'s the UPI ID?'..."}
+                className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-purple-500 focus:outline-none pr-10 font-medium disabled:opacity-50"
               />
               <button
                 onClick={() => handleSendCommand(inputText)}
-                disabled={!inputText.trim()}
+                disabled={!inputText.trim() || voiceState === "PROCESSING"}
                 className="absolute right-2.5 top-2.5 p-1 rounded-lg text-slate-400 hover:text-white disabled:opacity-30"
               >
                 <Send className="w-4 h-4" />
@@ -605,8 +632,9 @@ export const VoiceControlView: React.FC<Props> = ({
               {QUICK_COMMANDS.map((cmd, idx) => (
                 <button
                   key={idx}
+                  disabled={voiceState === "PROCESSING"}
                   onClick={() => handleSendCommand(cmd)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-950/70 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-mono transition-colors text-left"
+                  className="px-3 py-1.5 rounded-xl bg-slate-950/70 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs font-mono transition-colors text-left disabled:opacity-40"
                 >
                   "{cmd}"
                 </button>

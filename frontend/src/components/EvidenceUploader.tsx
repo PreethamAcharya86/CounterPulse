@@ -15,7 +15,9 @@ import {
   X,
   FileCode,
   ShieldAlert,
+  Camera,
 } from "lucide-react";
+import { WhatsAppCaptureModal } from "./WhatsAppCaptureModal";
 
 export interface EvidenceItem {
   id: string;
@@ -62,10 +64,16 @@ export interface EvidenceItem {
 interface Props {
   caseId: string;
   onEvidenceChange?: () => void;
+  onNavigateToScamIntel?: (evidenceId?: string) => void;
 }
 
-export const EvidenceUploader: React.FC<Props> = ({ caseId, onEvidenceChange }) => {
+export const EvidenceUploader: React.FC<Props> = ({
+  caseId,
+  onEvidenceChange,
+  onNavigateToScamIntel,
+}) => {
   const [evidenceList, setEvidenceList] = useState<EvidenceItem[]>([]);
+  const [isWhatsAppCaptureOpen, setIsWhatsAppCaptureOpen] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<"file" | "text" | "chat" | "url">("file");
   
@@ -308,7 +316,16 @@ export const EvidenceUploader: React.FC<Props> = ({ caseId, onEvidenceChange }) 
             </p>
           </div>
 
-          <div className="flex bg-slate-950/80 p-1 rounded-xl border border-slate-800/80">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setIsWhatsAppCaptureOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold shadow-md shadow-emerald-950/40 transition cursor-pointer"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>Capture WhatsApp</span>
+            </button>
+
+            <div className="flex bg-slate-950/80 p-1 rounded-xl border border-slate-800/80">
             <button
               onClick={() => setActiveTab("file")}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
@@ -343,6 +360,7 @@ export const EvidenceUploader: React.FC<Props> = ({ caseId, onEvidenceChange }) 
             </button>
           </div>
         </div>
+      </div>
 
         {uploadError && (
           <div className="mt-4 p-3 bg-rose-950/40 border border-rose-800/50 rounded-xl flex items-center gap-2 text-rose-300 text-xs">
@@ -755,6 +773,18 @@ export const EvidenceUploader: React.FC<Props> = ({ caseId, onEvidenceChange }) 
           </div>
         </div>
       )}
+
+      {/* WhatsApp Screen / Window / Android Share Capture Modal */}
+      <WhatsAppCaptureModal
+        isOpen={isWhatsAppCaptureOpen}
+        onClose={() => setIsWhatsAppCaptureOpen(false)}
+        caseId={caseId}
+        onCaptureSuccess={(evidenceId) => {
+          fetchEvidence();
+          if (onEvidenceChange) onEvidenceChange();
+          if (onNavigateToScamIntel) onNavigateToScamIntel(evidenceId);
+        }}
+      />
     </div>
   );
 };
