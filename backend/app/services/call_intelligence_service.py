@@ -37,7 +37,7 @@ UPI_REGEX = re.compile(
     r'\b[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}\b'
 )
 URL_REGEX = re.compile(
-    r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)'
+    r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,24}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)'
 )
 EMAIL_REGEX = re.compile(
     r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'

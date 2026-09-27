@@ -33,7 +33,7 @@ CHAT_PATTERNS = [
 # Patterns for extracting forensic indicators dynamically
 PHONE_REGEX = re.compile(r'(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}|\b\d{10}\b|\+\d{1,3}[\s-]?\d{4,5}[\s-]?\d{4,5}')
 UPI_REGEX = re.compile(r'\b[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}\b')
-URL_REGEX = re.compile(r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)')
+URL_REGEX = re.compile(r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,24}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)')
 EMAIL_REGEX = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b')
 AMOUNT_REGEX = re.compile(r'(?:INR|Rs\.?|₹)\s*([\d,]+(?:\.\d{1,2})?)|(\b[\d,]+(?:\.\d{1,2})?\s*(?:rupees|lakhs?|crores?)\b)', re.IGNORECASE)
 REMOTE_TOOL_REGEX = re.compile(r'\b(AnyDesk|TeamViewer|RustDesk|QuickSupport|AirDroid|\w+\.apk)\b', re.IGNORECASE)

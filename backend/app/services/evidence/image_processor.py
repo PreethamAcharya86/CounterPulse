@@ -185,13 +185,17 @@ class ImageProcessor(EvidenceProcessor):
                             )
                         )
                 # URLs
-                url_match = re.search(r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)', text)
+                url_match = re.search(r'(?:https?[:/\s]{1,4}|www\.)[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,24}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)', text, re.IGNORECASE)
                 if url_match:
+                    raw_u = url_match.group(0).strip()
+                    norm_u = re.sub(r'^https?[:/\s]+', 'https://', raw_u, flags=re.IGNORECASE)
+                    if not norm_u.startswith(('http://', 'https://')):
+                        norm_u = 'https://' + norm_u
                     provenance_items.append(
                         ProvenanceItem(
                             source_evidence_id=evidence_id,
                             source_reference=f"Screenshot OCR {box_summary}",
-                            extracted_value=url_match.group(0).strip(),
+                            extracted_value=norm_u,
                             confidence=conf_level,
                             verification_status="supported",
                         )

@@ -1,15 +1,31 @@
+import os
+import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import StaticPool
 from backend.app.core.config import settings
 
-# In SQLite, check_same_thread=False allows multiple threads (e.g. FastAPI async requests)
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+def _is_testing_environment() -> bool:
+    return (
+        os.environ.get("TESTING") == "true"
+        or os.environ.get("PYTEST_CURRENT_TEST") is not None
+        or "pytest" in sys.modules
+    )
 
-engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args=connect_args,
-    echo=False
-)
+def get_database_url() -> str:
+    if _is_testing_environment():
+        return os.environ.get("TEST_DATABASE_URL") or "sqlite:///:memory:"
+    return settings.DATABASE_URL
+
+_db_url = get_database_url()
+
+# In SQLite, check_same_thread=False allows multiple threads (e.g. FastAPI async requests)
+connect_args = {"check_same_thread": False} if _db_url.startswith("sqlite") else {}
+engine_kwargs = {"connect_args": connect_args, "echo": False}
+if _db_url == "sqlite:///:memory:":
+    engine_kwargs["poolclass"] = StaticPool
+
+engine = create_engine(_db_url, **engine_kwargs)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

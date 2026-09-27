@@ -333,7 +333,28 @@ class VoiceControlService:
         if "security advisory" in t or "safety steps" in t or "सुरक्षा सलाह" in t or "ಭದ್ರತಾ ಸಲಹೆ" in t or "suraksha salah" in t:
             return "READ_SECURITY_ADVISORY"
 
-        # 5. Intelligence Queries
+        # 5. Intelligence & Specific Identifier Queries
+        if (
+            re.search(r'\b(upi|upi id|vpa|beneficiary upi|upi address)\b', t)
+            or "यूपीआई" in t
+            or "ಯುಪಿಐ" in t
+        ):
+            return "GET_UPI_ID"
+
+        if (
+            re.search(r'\b(phone|phone number|mobile|mobile number|caller id|caller number|contact number)\b', t)
+            or "फोन नंबर" in t
+            or "ಫೋನ್ ನಂಬರ್" in t
+        ):
+            return "GET_PHONE_NUMBER"
+
+        if (
+            re.search(r'\b(financial loss|loss amount|how much money|total loss|kitna nuksan|amount lost)\b', t)
+            or "कितना नुकसान" in t
+            or "ಎಷ್ಟು ನಷ್ಟ" in t
+        ):
+            return "GET_FINANCIAL_LOSS"
+
         if (
             re.search(r'\b(what happened|summarize|tell me what happened|summary|incident|kya hua|yenayithu|enayithu|enaitu|yenaitu)\b', t)
             or "क्या हुआ" in t
@@ -692,6 +713,76 @@ class VoiceControlService:
                 response_text=resp,
                 voice_state="IDLE",
                 details={"evidence_count": len(ev_list) if ev_list else 0},
+            )
+
+        # E. Get UPI ID from Evidence
+        if intent == "GET_UPI_ID":
+            upi_inds = [i.value for i in (case.indicators or []) if i.indicator_type in ("upi", "upi_id")]
+            if not upi_inds and case.intelligence_json:
+                try:
+                    import json
+                    intel_data = json.loads(case.intelligence_json)
+                    for item in intel_data.get("evidence_intel", {}).get("extracted_indicators", []):
+                        if item.get("indicator_type") in ("upi", "upi_id") and item.get("value"):
+                            upi_inds.append(item["value"])
+                except Exception:
+                    pass
+
+            if upi_inds:
+                unique_upis = list(dict.fromkeys(upi_inds))
+                resp = f"The suspect UPI ID identified from evidence is {', '.join(unique_upis)}."
+            else:
+                resp = "No UPI ID was found in the supplied evidence for this case."
+
+            sess.voice_state = "IDLE"
+            return VoiceCommandResponse(
+                intent="GET_UPI_ID",
+                response_text=resp,
+                voice_state="IDLE",
+                details={"upi_ids": upi_inds},
+            )
+
+        # F. Get Phone Number from Evidence
+        if intent == "GET_PHONE_NUMBER":
+            phones = [i.value for i in (case.indicators or []) if i.indicator_type in ("phone", "phone_number")]
+            if not phones and case.intelligence_json:
+                try:
+                    import json
+                    intel_data = json.loads(case.intelligence_json)
+                    for item in intel_data.get("evidence_intel", {}).get("extracted_indicators", []):
+                        if item.get("indicator_type") in ("phone", "phone_number") and item.get("value"):
+                            phones.append(item["value"])
+                except Exception:
+                    pass
+
+            if phones:
+                unique_phones = list(dict.fromkeys(phones))
+                resp = f"The suspect phone number identified from evidence is {', '.join(unique_phones)}."
+            else:
+                resp = "No phone number was found in the supplied evidence for this case."
+
+            sess.voice_state = "IDLE"
+            return VoiceCommandResponse(
+                intent="GET_PHONE_NUMBER",
+                response_text=resp,
+                voice_state="IDLE",
+                details={"phones": phones},
+            )
+
+        # G. Get Financial Loss
+        if intent == "GET_FINANCIAL_LOSS":
+            if case.financial_loss is not None:
+                currency = case.currency or "INR"
+                resp = f"The assessed financial loss for this incident is {currency} {case.financial_loss:,.2f}."
+            else:
+                resp = "Financial loss is not established from the supplied evidence."
+
+            sess.voice_state = "IDLE"
+            return VoiceCommandResponse(
+                intent="GET_FINANCIAL_LOSS",
+                response_text=resp,
+                voice_state="IDLE",
+                details={"financial_loss": case.financial_loss},
             )
 
         # E. Read Cybercrime Complaint

@@ -3,11 +3,15 @@ import os
 import sys
 
 sys.stdout.reconfigure(encoding="utf-8")
+os.environ["TESTING"] = "true"
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["TEST_DATABASE_URL"] = "sqlite:///:memory:"
+
 from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
-from backend.app.core.database import SessionLocal
+from backend.app.core.database import SessionLocal, Base, engine
 from backend.app.models.case import Case
 from backend.app.models.report import Report, ActionEvent
 from backend.app.services.ai.mock import MockProvider
@@ -26,6 +30,9 @@ def run_e2e_demonstration():
     mock_email = MockEmailProvider()
     set_email_provider(mock_email)
     app.dependency_overrides[get_email_provider_dep] = lambda: mock_email
+
+    # Setup in-memory tables
+    Base.metadata.create_all(bind=engine)
 
     # Setup client
     client = TestClient(app)

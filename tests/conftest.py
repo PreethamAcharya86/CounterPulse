@@ -1,3 +1,8 @@
+import os
+os.environ["TESTING"] = "true"
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["TEST_DATABASE_URL"] = "sqlite:///:memory:"
+
 import io
 import wave
 import struct

@@ -8,6 +8,7 @@ from fastapi import UploadFile, HTTPException
 
 from backend.app.models.evidence import Evidence
 from backend.app.models.case import Case
+from backend.app.models.indicator import Indicator
 from backend.app.core.config import settings
 from backend.app.core.security import (
     sanitize_filename,
@@ -258,9 +259,13 @@ class EvidenceService:
                 evidence.normalized_json = normalized.to_db_json()
                 evidence.error_message = None
 
-            db.commit()
-            db.refresh(evidence)
-            return normalized
+                db.commit()
+                db.refresh(evidence)
+
+                # Persist extracted indicators and financial impact to case
+                self._persist_evidence_indicators(evidence, normalized, db)
+
+                return normalized
 
         except Exception as e:
             logger.exception(f"Unexpected error processing evidence {evidence_id}: {e}")
@@ -340,6 +345,103 @@ class EvidenceService:
         db.commit()
         db.refresh(existing_evidence)
         return existing_evidence, normalized
+
+    def _persist_evidence_indicators(
+        self,
+        evidence: Evidence,
+        normalized: NormalizedEvidence,
+        db: Session,
+    ) -> None:
+        """
+        Extract and persist indicators directly from normalized evidence into the case Indicator table.
+        Avoids duplicates and updates financial loss if present.
+        """
+        try:
+            case = db.query(Case).filter(Case.id == evidence.case_id).first()
+            if not case:
+                return
+
+            existing = db.query(Indicator).filter(Indicator.case_id == evidence.case_id).all()
+            existing_keys = {(i.indicator_type.lower(), i.value.strip().lower()) for i in existing}
+
+            # 1. Gather items from normalized.provenance (from OCR + Gemini Multimodal)
+            items_to_add: List[Tuple[str, str, str, str, str]] = []
+
+            for p in getattr(normalized, "provenance", []):
+                val = p.extracted_value.strip()
+                if not val:
+                    continue
+                ind_type = "suspicious_entity"
+                if "@" in val and "." not in val.split("@")[0]:
+                    ind_type = "upi_id"
+                elif re.search(r'^(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}$', val) or (len(re.sub(r'\D', '', val)) == 10 and "@" not in val):
+                    ind_type = "phone_number"
+                elif val.startswith("http://") or val.startswith("https://"):
+                    ind_type = "url"
+                elif "@" in val and "." in val.split("@")[1]:
+                    ind_type = "email"
+                elif any(c in val for c in ("₹", "Rs", "INR")):
+                    ind_type = "financial_amount"
+                elif "Vision (" in p.source_reference:
+                    m = re.search(r'Vision \((\w+)\)', p.source_reference)
+                    if m:
+                        ind_type = m.group(1)
+
+                items_to_add.append((
+                    ind_type,
+                    val,
+                    p.confidence or "high",
+                    p.verification_status or "supported",
+                    p.source_reference or f"Evidence {evidence.id[:8]}",
+                ))
+
+            # 2. Also extract regex indicators from plain text / raw_content
+            content_text = normalized.to_db_content()
+            if content_text:
+                from backend.app.services.call_intelligence_service import PHONE_REGEX, UPI_REGEX, URL_REGEX, EMAIL_REGEX, AMOUNT_REGEX
+                for m in PHONE_REGEX.finditer(content_text):
+                    pv = m.group(0).strip()
+                    if "@" not in pv and len(re.sub(r'\D', '', pv)) >= 10:
+                        items_to_add.append(("phone_number", pv, "high", "supported", f"Evidence OCR ({evidence.id[:8]})"))
+                for m in UPI_REGEX.finditer(content_text):
+                    uv = m.group(0).strip()
+                    if not uv.endswith((".com", ".org", ".net", ".edu", ".gov")):
+                        items_to_add.append(("upi_id", uv, "high", "supported", f"Evidence OCR ({evidence.id[:8]})"))
+                for m in URL_REGEX.finditer(content_text):
+                    items_to_add.append(("url", m.group(0).strip(), "high", "supported", f"Evidence OCR ({evidence.id[:8]})"))
+                for m in EMAIL_REGEX.finditer(content_text):
+                    items_to_add.append(("email", m.group(0).strip(), "high", "supported", f"Evidence OCR ({evidence.id[:8]})"))
+                for m in AMOUNT_REGEX.finditer(content_text):
+                    items_to_add.append(("financial_amount", m.group(0).strip(), "medium", "supported", f"Evidence OCR ({evidence.id[:8]})"))
+
+            # 3. Insert non-duplicate indicators
+            for ind_type, val, conf, v_status, ref in items_to_add:
+                k = (ind_type.lower(), val.strip().lower())
+                if k not in existing_keys:
+                    new_ind = Indicator(
+                        case_id=evidence.case_id,
+                        indicator_type=ind_type,
+                        value=val.strip(),
+                        confidence=conf,
+                        verification_status=v_status,
+                        source_evidence_id=evidence.id,
+                        source_reference=ref,
+                    )
+                    db.add(new_ind)
+                    existing_keys.add(k)
+
+                    # Update case financial_loss if amount found and not yet set
+                    if ind_type == "financial_amount" and (case.financial_loss is None or case.financial_loss == 0):
+                        num_str = re.sub(r'[^\d.]', '', val)
+                        try:
+                            if num_str:
+                                case.financial_loss = float(num_str)
+                        except Exception:
+                            pass
+
+            db.commit()
+        except Exception as e:
+            logger.warning(f"Failed to persist evidence indicators for {evidence.id}: {e}")
 
 # Singleton instance
 evidence_service = EvidenceService()

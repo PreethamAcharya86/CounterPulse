@@ -138,7 +138,7 @@ class TextProcessor(EvidenceProcessor):
                     )
 
             # URLs
-            urls = re.findall(r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)', para)
+            urls = re.findall(r'https?://(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,24}\b(?:[-a-zA-Z0-9()@:%_+.~#?&/=]*)', para)
             for u in urls:
                 provenance_items.append(
                     ProvenanceItem(

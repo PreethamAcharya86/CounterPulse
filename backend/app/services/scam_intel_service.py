@@ -439,6 +439,12 @@ class ScamIntelligenceService:
             )
             added_count = add_res.added_count
 
+        if scam_type and scam_type != "Under Investigation":
+            case.scam_category = scam_type
+        if threat_assessment and (not case.modus_operandi or case.modus_operandi == "Analysis of provided evidentiary dialogue in progress."):
+            case.modus_operandi = threat_assessment
+        db.commit()
+
         return ScamIntelligenceAnalysisResponse(
             case_id=case_id,
             conversation_summary=conversation_summary,

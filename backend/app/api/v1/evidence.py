@@ -3,6 +3,7 @@ import json
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_db, get_evidence_svc
@@ -165,6 +166,17 @@ async def get_evidence(
     if not ev:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Evidence '{evidence_id}' not found.")
     return _format_evidence_response(ev)
+
+@router.get("/evidence/{evidence_id}/file")
+async def get_evidence_file(
+    evidence_id: str,
+    db: Session = Depends(get_db),
+):
+    """Serve the raw stored evidence file (image, pdf, text, audio) for inspection."""
+    ev = db.query(Evidence).filter(Evidence.id == evidence_id).first()
+    if not ev or not ev.file_path or not os.path.exists(ev.file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"File for evidence '{evidence_id}' not found.")
+    return FileResponse(ev.file_path, media_type=ev.mime_type, filename=ev.filename)
 
 @router.post("/evidence/{evidence_id}/process", response_model=EvidenceProcessResponse)
 async def process_or_retry_evidence(
